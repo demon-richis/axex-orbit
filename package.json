@@ -1,0 +1,21 @@
+{
+  "name": "axex-orbit",
+  "version": "0.1.0",
+  "description": "Axex Orbit - Track & Tap temporal captcha for high-risk Discord verification",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "redteam": "node tools/redteam.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1"
+  }
+}
