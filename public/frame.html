@@ -1,29 +1,92 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>Axex Orbit</title>
 <style>
-  :root { color-scheme: dark; --bg:#14161c; --fg:#e8eaf0; --muted:#8b91a1; --accent:#5865f2; --ok:#3ba55d; --bad:#ed4245; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px system-ui, sans-serif; }
-  #wrap { display:flex; flex-direction:column; align-items:center; gap:8px; padding:10px; max-width:420px; margin:0 auto; }
-  #status { min-height:20px; font-weight:600; text-align:center; }
-  #stage { width:100%; aspect-ratio:360/270; position:relative; touch-action:none; }
-  canvas { width:100%; height:100%; border-radius:10px; background:#0d0f14; display:block; touch-action:none; cursor:crosshair; }
-  #bar { display:flex; justify-content:space-between; width:100%; align-items:center; color:var(--muted); font-size:12px; }
-  button { background:none; border:1px solid #2a2e3a; color:var(--muted); border-radius:6px; padding:4px 10px; cursor:pointer; font:inherit; }
-  button:hover { color:var(--fg); }
-  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; border-radius:10px; background:rgba(13,15,20,.85); font-weight:700; font-size:18px; text-align:center; padding:12px; }
+  :root { --bg:#fff; --fg:#1d1d1f; --mut:#6e6e73; --line:rgba(0,0,0,.14); --stage:#f3f5f9; --accent:#2f6bff; --ok:#1e9e5a; --bad:#d93025; --warn:#c98200; --hover:rgba(47,107,255,.6); }
+  [data-theme="dark"] { --bg:#1c1c1e; --fg:#f5f5f7; --mut:#a1a1a6; --line:rgba(255,255,255,.2); --stage:#2a2c33; --accent:#4c84ff; --ok:#30d158; --bad:#ff453a; --warn:#ffd60a; --hover:rgba(76,132,255,.7); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+
+  /* ---------- inline widget (300 x 65) ---------- */
+  #box { display: flex; align-items: center; gap: 12px; height: 100%; padding: 0 14px; box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; user-select: none; outline: none; transition: box-shadow .2s; }
+  #box:hover { box-shadow: inset 0 0 0 1px var(--hover); }
+  #box:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+  #check { width: 26px; height: 26px; border: 2px solid #9aa3b2; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--bg); transition: background .2s, border-color .2s, border-radius .2s; }
+  #check svg { display: none; }
+  #spin { display: none; width: 18px; height: 18px; border: 2.5px solid rgba(128,128,128,.28); border-top-color: var(--accent); border-radius: 50%; animation: s .8s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  @keyframes pop { 0% { transform: scale(.4); } 60% { transform: scale(1.14); } 100% { transform: scale(1); } }
+  #txt { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #label { font-size: 14px; font-weight: 500; }
+  #sub { font-size: 11px; color: var(--mut); }
+  #sub:empty { display: none; }
+  .brand { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; line-height: 1; flex: none; }
+  .brand b { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; }
+  .brand small { font-size: 8px; color: var(--mut); }
+  #box[data-state="loading"] #check { border-color: transparent; background: none; }
+  #box[data-state="loading"] #spin { display: block; }
+  #box[data-state="success"], #box[data-state="loading"] { cursor: default; }
+  #box[data-state="success"] #check, #box[data-state="fail"] #check, #box[data-state="error"] #check { border-color: transparent; border-radius: 50%; }
+  #box[data-state="success"] #check { background: var(--ok); animation: pop .38s ease; }
+  #box[data-state="fail"] #check { background: var(--bad); }
+  #box[data-state="error"] #check { background: var(--warn); }
+  #box[data-state="success"] #tick, #box[data-state="fail"] #cross, #box[data-state="error"] #excl { display: block; }
+  #box[data-state="fail"] #label { color: var(--bad); }
+
+  /* ---------- popup challenge ---------- */
+  body:not(.pop) #pop { display: none; }
+  body.pop #box { display: none; }
+  #pop { height: 100%; display: flex; flex-direction: column; overflow-y: auto; --c: var(--accent); }
+  #pop[data-tone="green"] { --c: var(--ok); }
+  #pop[data-tone="red"] { --c: var(--bad); }
+  #ph { position: relative; flex: none; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0)), var(--c); color: #fff; padding: 18px 20px 16px; transition: background-color .25s; }
+  #instrSmall { font-size: 14px; opacity: .95; min-height: 19px; }
+  #instr { font-size: 28px; font-weight: 700; line-height: 1.15; letter-spacing: -.012em; margin-top: 2px; }
+  #close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(255,255,255,.22); color: #fff; font-size: 17px; line-height: 1; cursor: pointer; }
+  #close:hover { background: rgba(255,255,255,.34); }
+  #pb { height: 4px; flex: none; background: rgba(0,0,0,.16); }
+  #bar { height: 100%; width: 100%; background: #fff; opacity: .92; }
+  #stage { position: relative; flex: none; margin: 12px; aspect-ratio: 4 / 3; border: 1px solid var(--line); border-radius: 12px; background: var(--stage); overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+  #vf { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30,158,90,.1); }
+  #vf svg { width: 96px; height: 96px; animation: pop .45s ease; }
+  #pop[data-view="done"] #vf { display: flex; }
+  #pf { display: flex; align-items: center; gap: 12px; padding: 10px 16px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--mut); margin-top: auto; flex: none; }
+  #help { background: none; border: 0; padding: 0; line-height: 0; cursor: pointer; color: var(--mut); }
+  #help:hover { color: var(--fg); }
+  #rounds { flex: 1; text-align: center; }
 </style>
 </head>
 <body>
-<div id="wrap">
-  <div id="status">...</div>
-  <div id="stage"><canvas id="c"></canvas><div id="overlay"></div></div>
-  <div id="bar"><span id="round"></span><button id="help" type="button"></button></div>
-</div>
+  <div id="box" role="button" tabindex="0" data-state="idle" aria-live="polite">
+    <div id="check">
+      <span id="spin"></span>
+      <svg id="tick" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg id="cross" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <svg id="excl" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v6M8 12.2v.4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </div>
+    <div id="txt"><span id="label">Verify you are human</span><span id="sub"></span></div>
+    <div class="brand"><b><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="#2f6bff" stroke-width="2.2"/><circle cx="19.2" cy="8.6" r="3.2" fill="#f59e0b"/></svg>Axex Orbit</b><small>Privacy &middot; Terms</small></div>
+  </div>
+
+  <div id="pop" data-tone="blue" data-view="play">
+    <div id="ph"><div id="instrSmall"></div><div id="instr"></div><button id="close" type="button" aria-label="Cancel">&times;</button></div>
+    <div id="pb"><div id="bar"></div></div>
+    <div id="stage">
+      <canvas id="c"></canvas>
+      <div id="vf"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#1e9e5a"/><path d="M6.5 12.5l3.7 3.7 7.3-8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
+    <div id="pf">
+      <button id="help" type="button" aria-label="Need help?"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5M12 16.6v.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <span id="rounds"></span>
+      <div class="brand"><b><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="#2f6bff" stroke-width="2.2"/><circle cx="19.2" cy="8.6" r="3.2" fill="#f59e0b"/></svg>Axex Orbit</b><small>Privacy &middot; Terms</small></div>
+    </div>
+  </div>
 <script type="module" src="/widget/frame.js"></script>
 </body>
 </html>

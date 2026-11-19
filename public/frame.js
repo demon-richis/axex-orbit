@@ -1,150 +1,290 @@
-import { positionAt } from "/lib/scene.js";
+import { objectPosition } from "/lib/scene.js";
 
 const TEXT = {
-  en: { loading: "Loading...", remember: "Remember the glowing ball", track: "Keep your eyes on it...", tap: "Tap the ball you remembered!", ok: "Correct", wrong: "Wrong ball. Verification failed.", err: "Something went wrong. Please retry.", round: "Round", help: "Need help?" },
-  hi: { loading: "Load ho raha hai...", remember: "Chamakte hue ball ko yaad rakho", track: "Us par nazar rakho...", tap: "Jo ball yaad tha, use tap karo!", ok: "Sahi", wrong: "Galat ball. Verification fail.", err: "Kuch gadbad hui. Dobara try karo.", round: "Round", help: "Madad chahiye?" },
+  idle: ["Verify you are human", ""],
+  loading: ["Verifying...", ""],
+  success: ["Success!", ""],
+  fail: ["Verification failed", "Click to try again"],
+  cancelled: ["Verification cancelled", "Click to try again"],
+  error: ["Could not connect", "Click to retry"],
+  round: (a, b) => `Round ${a} of ${b}`,
 };
+const PHASE = [["Remember the", "glowing ball"], ["Keep your eyes on", "that ball"], ["Tap the ball that", "was glowing"]];
 
 const params = new URLSearchParams(location.hash.slice(1));
-const session = params.get("session");
 const parentOrigin = params.get("origin") || "";
-const lang = TEXT[params.get("lang")] ? params.get("lang") : "en";
-const T = TEXT[lang];
+const themeParam = params.get("theme") || "light";
+function resolveTheme() {
+  if (themeParam === "dark") return "dark";
+  if (themeParam === "auto") {
+    try { return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch { return "light"; }
+  }
+  return "light";
+}
+const theme = resolveTheme();
+try { document.documentElement.setAttribute("data-theme", theme); } catch { /* ignore */ }
+const dark = theme === "dark";
+const PAL = dark
+  ? { a: "#8eaaff", b: "#3c63e6", ghost: "rgba(110,140,255,.2)", ring: "rgba(255,255,255,.07)", shadow: "rgba(0,0,0,.4)", ok: "#30d158", bad: "#ff453a" }
+  : { a: "#7fa0ff", b: "#2f5be0", ghost: "rgba(47,91,224,.14)", ring: "rgba(154,163,178,.25)", shadow: "rgba(0,0,0,.12)", ok: "#1e9e5a", bad: "#d93025" };
+const AMBER = "#f59e0b";
 
 const $ = (id) => document.getElementById(id);
-const canvas = $("c");
-const ctx = canvas.getContext("2d");
-const statusEl = $("status");
-const overlay = $("overlay");
-$("help").textContent = T.help;
-document.documentElement.lang = lang === "hi" ? "hi" : "en";
+const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), canvas: $("c"), instrSmall: $("instrSmall"), instr: $("instr"), rounds: $("rounds"), bar: $("bar"), help: $("help"), close: $("close") };
+const ctx = el.canvas.getContext("2d");
+const r1 = (n) => Math.round(n * 10) / 10;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function notify(msg) {
   if (!parentOrigin) return;
   try { parent.postMessage({ source: "axex-orbit", ...msg }, parentOrigin); } catch { /* ignore */ }
 }
-$("help").addEventListener("click", () => notify({ event: "help" }));
-
 async function api(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return res.json();
 }
 
-function setStatus(t) { statusEl.textContent = t; }
-function showOverlay(t) { overlay.style.display = t ? "flex" : "none"; overlay.textContent = t || ""; }
-
-function fitCanvas(scene) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
-  const s = canvas.width / scene.W;
-  ctx.setTransform(s, 0, 0, s, 0, 0);
-  return rect.width / scene.W; // css px per logical px
+/* ---------------- inline widget state ---------------- */
+let verified = false;
+function setInline(state, key) {
+  const [a, b] = TEXT[key || state] || ["", ""];
+  el.box.setAttribute("data-state", state);
+  el.label.textContent = a;
+  el.sub.textContent = b;
+  verified = state === "success";
+}
+function setHeader(tone, small, big) {
+  el.pop.setAttribute("data-tone", tone);
+  el.instrSmall.textContent = small;
+  el.instr.textContent = big;
+}
+function enterPop() {
+  setHeader("blue", "One moment", "Loading...");
+  el.pop.setAttribute("data-view", "play");
+  notify({ event: "mode", mode: "pop" });
+  return sleep(80).then(() => document.body.classList.add("pop")); // let the parent resize the iframe first
+}
+function leavePop() {
+  document.body.classList.remove("pop");
+  el.pop.setAttribute("data-view", "play");
+  notify({ event: "mode", mode: "inline" });
 }
 
+/* ---------------- messages from the embedding page ---------------- */
+let sessionResolver = null;
+let cancelRound = null;
+window.addEventListener("message", (e) => {
+  if (e.source !== parent || e.origin !== parentOrigin) return;
+  const d = e.data;
+  if (!d || d.target !== "axex-orbit-frame") return;
+  if (d.cmd === "cancel") { if (cancelRound) cancelRound(); return; }
+  if (!sessionResolver) return;
+  if (d.cmd === "session") { sessionResolver(d.session); sessionResolver = null; }
+  else if (d.cmd === "session_error") { sessionResolver(null); sessionResolver = null; }
+});
+function requestSession() {
+  return new Promise((resolve) => {
+    sessionResolver = resolve;
+    notify({ event: "request_session" });
+    setTimeout(() => { if (sessionResolver === resolve) { sessionResolver = null; resolve(null); } }, 10000);
+  });
+}
+
+/* ---------------- drawing ---------------- */
+function fit(scene) {
+  const r = el.canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(r.width * dpr));
+  const h = Math.max(1, Math.round(r.height * dpr));
+  if (el.canvas.width !== w || el.canvas.height !== h) { el.canvas.width = w; el.canvas.height = h; }
+  ctx.setTransform(w / scene.W, 0, 0, h / scene.H, 0, 0);
+}
+function ball(x, y, r, c1, c2, alpha = 1) {
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+  g.addColorStop(0, c1);
+  g.addColorStop(1, c2);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+function ring(x, y, r, color, w, dash) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.lineWidth = w;
+  ctx.strokeStyle = color;
+  if (dash) ctx.setLineDash(dash);
+  ctx.stroke();
+  if (dash) ctx.setLineDash([]);
+}
+function pill(text, x, y, bg, fg, scene) {
+  const w = text.length * 6.8 + 18;
+  const px = Math.min(Math.max(x - w / 2, 4), scene.W - w - 4);
+  const py = Math.min(Math.max(y, 4), scene.H - 26);
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(px, py, w, 22, 11); else ctx.rect(px, py, w, 22);
+  ctx.fill();
+  ctx.fillStyle = fg;
+  ctx.font = "700 10px -apple-system, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, px + w / 2, py + 11.5);
+}
+
+// o.reveal = { tapped:[x,y]|null, ok:boolean } draws the verdict markers on the frozen scene.
+function drawScene(scene, t, o = {}) {
+  ctx.clearRect(0, 0, scene.W, scene.H);
+  for (const rr of [60, 115]) ring(scene.W / 2, scene.H / 2, rr, PAL.ring, 1);
+  const moving = t > scene.highlightMs && t < scene.highlightMs + scene.shuffleMs;
+  scene.objects.forEach((ob) => {
+    const [x, y] = objectPosition(scene, ob, t);
+    ctx.beginPath();
+    ctx.ellipse(x, y + scene.R + 3, scene.R * 0.7, 3, 0, 0, Math.PI * 2);
+    ctx.fillStyle = PAL.shadow;
+    ctx.fill();
+    if (moving) for (let k = 2; k >= 1; k--) {
+      const [tx, ty] = objectPosition(scene, ob, t - k * 45);
+      ball(tx, ty, scene.R * (1 - k * 0.12), PAL.a, PAL.b, 0.13);
+    }
+    ball(x, y, scene.R, PAL.a, PAL.b);
+  });
+  const [tx, ty] = objectPosition(scene, scene.objects[scene.target], t);
+  if (t < scene.highlightMs) {
+    const pulse = 5 + 2.5 * Math.sin(t / 140);
+    ball(tx, ty, scene.R + 10, AMBER, AMBER, 0.22);
+    ball(tx, ty, scene.R, "#ffd27a", AMBER);
+    ring(tx, ty, scene.R + pulse, AMBER, 3);
+    pill("REMEMBER", tx, ty - scene.R - 32, AMBER, "#1f2937", scene);
+  }
+  if (o.reveal) {
+    ring(tx, ty, scene.R + 8, PAL.ok, 3, o.reveal.ok ? null : [5, 4]);
+    pill(o.reveal.ok ? "CORRECT" : "THIS ONE", tx, ty + scene.R + 14, PAL.ok, "#fff", scene);
+    if (!o.reveal.ok && o.reveal.tapped) ring(o.reveal.tapped[0], o.reveal.tapped[1], scene.R + 8, PAL.bad, 3);
+  }
+}
+
+/* ---------------- one round ---------------- */
 function runRound(data) {
   return new Promise((resolve) => {
     const { scene } = data;
-    const scale = fitCanvas(scene);
     const answerStart = scene.highlightMs + scene.shuffleMs;
+    const end = answerStart + scene.windowMs;
     const t0 = performance.now();
+    const now = () => performance.now() - t0;
     let path = [];
-    let answered = false;
+    let done = false;
     let raf = 0;
+    let lastPhase = -1;
 
     const toLogical = (e) => {
-      const r = canvas.getBoundingClientRect();
-      return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
+      const r = el.canvas.getBoundingClientRect();
+      const s = r.width / scene.W;
+      return [(e.clientX - r.left) / s, (e.clientY - r.top) / s];
     };
-    const now = () => performance.now() - t0;
-
-    function onMove(e) {
-      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-      for (const ev of events.length ? events : [e]) {
+    const sample = (e) => {
+      const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null;
+      for (const ev of list && list.length ? list : [e]) {
         const [x, y] = toLogical(ev);
-        path.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(now() * 10) / 10]);
+        path.push([r1(x), r1(y), r1(now())]);
       }
-      if (path.length > 160) path = path.slice(-120);
-    }
-    async function onDown(e) {
-      if (answered) return;
-      const t = now();
-      if (t < answerStart) return;
-      answered = true;
+      if (path.length > 200) path = path.slice(-120);
+    };
+    const cleanup = () => {
+      done = true;
       cancelAnimationFrame(raf);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("pointermove", sample);
+      el.canvas.removeEventListener("pointerdown", onDown);
+      cancelRound = null;
+    };
+    function onDown(e) {
+      if (done) return;
+      const t = now();
+      if (t < answerStart) return; // ignore taps before the balls stop
+      sample(e);
       const [x, y] = toLogical(e);
-      onMove(e);
-      resolve({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, t: Math.round(t * 10) / 10, pt: e.pointerType || "mouse", trusted: e.isTrusted === true, path: path.slice(-80) });
+      cleanup();
+      drawScene(scene, t);
+      resolve({ tapped: [x, y], answer: { x: r1(x), y: r1(y), t: r1(t), pt: e.pointerType || "mouse", trusted: e.isTrusted === true, path: path.slice(-80) } });
     }
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerdown", onDown);
+    cancelRound = () => { if (!done) { cleanup(); resolve({ cancelled: true }); } };
 
     function frame() {
       const t = now();
-      ctx.clearRect(0, 0, scene.W, scene.H);
-      const tau = t - scene.highlightMs;
-      scene.objects.forEach((o, i) => {
-        const [x, y] = positionAt(o, tau);
-        ctx.beginPath();
-        ctx.arc(x, y, scene.R, 0, Math.PI * 2);
-        ctx.fillStyle = "#4b5266";
-        ctx.fill();
-        if (i === scene.target && t < scene.highlightMs) {
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = "#ffd24a";
-          ctx.shadowColor = "#ffd24a";
-          ctx.shadowBlur = 16;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-          ctx.fillStyle = "#ffd24a";
-          ctx.fill();
-        }
-      });
-      setStatus(t < scene.highlightMs ? T.remember : t < answerStart ? T.track : T.tap);
-      if (t > answerStart + scene.windowMs) {
-        answered = true;
-        canvas.removeEventListener("pointermove", onMove);
-        canvas.removeEventListener("pointerdown", onDown);
-        resolve({ x: 0, y: 0, t: answerStart + scene.windowMs + 1, pt: "mouse", trusted: false, path: [] });
+      fit(scene);
+      drawScene(scene, t);
+      const phase = t < scene.highlightMs ? 0 : t < answerStart ? 1 : 2;
+      if (phase !== lastPhase) { lastPhase = phase; setHeader("blue", PHASE[phase][0], PHASE[phase][1]); }
+      const frac = phase === 0 ? 1 - t / scene.highlightMs : phase === 1 ? (t - scene.highlightMs) / scene.shuffleMs : 1 - (t - answerStart) / scene.windowMs;
+      el.bar.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
+      if (t > end) {
+        cleanup();
+        resolve({ tapped: null, answer: { x: 0, y: 0, t: r1(end + 1), pt: "mouse", trusted: false, path: [] } });
         return;
       }
       raf = requestAnimationFrame(frame);
     }
+    document.addEventListener("pointermove", sample);
+    el.canvas.addEventListener("pointerdown", onDown);
     frame();
   });
 }
 
-async function main() {
-  if (!session) { setStatus(T.err); notify({ event: "error", reason: "no_session" }); return; }
-  setStatus(T.loading);
-  let data;
-  try { data = await api("/v1/challenge/new", { session }); } catch { data = null; }
-  if (!data || !data.ok) { setStatus(T.err); notify({ event: "error", reason: (data && data.reason) || "network" }); return; }
+async function verdict(scene, tapped, ok, last) {
+  fit(scene);
+  el.bar.style.width = "100%";
+  if (ok && last) {
+    setHeader("green", "All rounds correct", "You are verified");
+    el.pop.setAttribute("data-view", "done");
+    await sleep(1000);
+    return;
+  }
+  drawScene(scene, scene.highlightMs + scene.shuffleMs, { reveal: { tapped, ok } });
+  if (ok) { setHeader("green", "Correct", "Next round"); await sleep(900); }
+  else { setHeader("red", "Wrong ball.", "Verification failed"); await sleep(1700); }
+}
 
+/* ---------------- main flow ---------------- */
+let busy = false;
+async function playRounds(first) {
+  let data = first;
   while (true) {
-    $("round").textContent = `${T.round} ${data.round}/${data.rounds}`;
-    showOverlay("");
-    const answer = await runRound(data);
+    el.rounds.textContent = TEXT.round(data.round, data.rounds);
+    const r = await runRound(data);
+    if (r.cancelled) { leavePop(); setInline("fail", "cancelled"); notify({ event: "fail", reason: "cancelled" }); return; }
     let res;
-    try { res = await api("/v1/challenge/answer", { token: data.token, answer }); } catch { res = null; }
-    if (!res) { setStatus(T.err); notify({ event: "error", reason: "network" }); return; }
-    if (!res.ok) {
-      setStatus(T.wrong);
-      showOverlay(T.wrong);
-      notify({ event: "fail", reason: res.reason });
-      return;
-    }
-    if (res.done) {
-      setStatus(T.ok);
-      showOverlay(T.ok);
-      notify({ event: "success", token: res.passToken });
-      return;
-    }
-    setStatus(T.ok);
+    try { res = await api("/v1/challenge/answer", { token: data.token, answer: r.answer }); } catch { res = null; }
+    if (!res) { leavePop(); setInline("error"); notify({ event: "error", reason: "network" }); return; }
+    if (!res.ok) { await verdict(data.scene, r.tapped, false, false); leavePop(); setInline("fail"); notify({ event: "fail", reason: res.reason }); return; }
+    await verdict(data.scene, r.tapped, true, res.done === true);
+    if (res.done) { leavePop(); setInline("success"); notify({ event: "success", token: res.passToken }); return; }
     data = res;
   }
 }
-main();
+
+async function start() {
+  if (busy || verified) return;
+  busy = true;
+  try {
+    setInline("loading");
+    const session = await requestSession();
+    if (!session) { setInline("error"); notify({ event: "error", reason: "session" }); return; }
+    let data;
+    try { data = await api("/v1/challenge/new", { session }); } catch { data = null; }
+    if (!data || !data.ok) { setInline("error"); notify({ event: "error", reason: (data && data.reason) || "network" }); return; }
+    await enterPop();
+    await playRounds(data);
+  } finally {
+    busy = false;
+  }
+}
+
+el.box.addEventListener("click", start);
+el.box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { if (e.preventDefault) e.preventDefault(); start(); } });
+el.close.addEventListener("click", () => { if (cancelRound) cancelRound(); });
+el.help.addEventListener("click", () => notify({ event: "help" }));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && cancelRound) cancelRound(); });
+setInline("idle");
+notify({ event: "ready" });

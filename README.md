@@ -18,19 +18,25 @@ Portal backend --POST /v1/siteverify (secret) { token, userId, guildId }--> { su
 * Failures return only a coarse reason (`failed`/`invalid`), details go to server logs.
 
 ## Embed (portal page)
+Looks like a normal captcha: a small "Verify you are human" box. Click -> the challenge opens as a centered popup -> collapses back to the box (green "Verified" on success).
 ```html
 <script src="https://ORBIT_HOST/widget/embed.js"></script>
-<div id="orbit"></div>
+<div id="captcha"></div>
 <script>
-  AxexOrbit.render(document.getElementById("orbit"), {
-    session: SESSION_FROM_YOUR_BACKEND,
-    lang: "en", // or "hi"
+  AxexOrbit.render(document.getElementById("captcha"), {
+    // called on every click/retry: ask YOUR backend for a fresh session (POST /v1/session, one session = one attempt)
+    getSession: () => fetch("/api/orbit-session").then(r => r.json()).then(j => j.session),
     onSuccess: (token) => { /* send token to YOUR backend, which calls siteverify */ },
-    onFail: () => {}, onError: (r) => {}, onHelp: () => { /* route to staff review */ },
+    onFail: (reason) => {}, onError: (reason) => {}, onHelp: () => { /* route to staff review */ },
   });
 </script>
 ```
 Set `ALLOWED_ORIGINS` to your portal origin, otherwise the iframe is refused (CSP `frame-ancestors`).
+
+## How the challenge plays
+1. Balls appear, one glows: "Remember this ball".
+2. All balls look the same and move around, crossing each other: "Keep your eyes on it...".
+3. Balls stop: "Which ball was it? Tap it!". Right tap -> next round / verified, wrong tap -> failed (the right one is revealed).
 
 ## Portal backend (Node)
 ```js
@@ -45,9 +51,9 @@ Any other language: plain HTTP with `Authorization: Bearer <ORBIT_SITE_SECRET>`.
 ## Difficulty presets (`src/scene.js`)
 | level | rounds | balls | speed |
 |---|---|---|---|
-| medium | 1 | 6 | 0.8 |
-| high | 2 | 8 | 1.0 |
-| extreme | 3 | 10 | 1.2 |
+| medium | 1 | 8 | 0.8 |
+| high | 2 | 12 | 1.0 |
+| extreme | 3 | 14 | 1.15 |
 
 ## Run
 ```
@@ -74,7 +80,7 @@ Costs: server CPU/bandwidth, latency, accessibility fallback. Also keep: failure
 
 ### Other limits
 * Behavior thresholds are heuristics tested only with a synthetic mouse. **Calibrate on real human traces (mouse + touch) before production**; tune `MIN_BEHAVIOR`.
-* The widget UI was not exercised in a real browser in the build sandbox (API, logic and syntax are tested). Do a manual run on desktop + phone.
+* The widget logic is tested end to end with a fake DOM (checkbox -> popup -> rounds -> verdict -> siteverify), but it was never opened in a real browser in the build sandbox. Check the look and touch behavior manually on desktop + phone.
 * `PgStore` (Postgres replay store) is untested in the build sandbox. Use the memory store on a single instance until you have run it against Neon.
 * Keep Turnstile as a base layer in front of Orbit for headless-browser signals.
 * Accessibility: the "Need help?" button emits `onHelp` so the portal can route the user to staff review.
