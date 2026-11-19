@@ -24,7 +24,7 @@ test("widget can start a challenge from a session; client can't pick difficulty"
   const c = (await app.inject({ method: "POST", url: "/v1/challenge/new", payload: { session: s.session, difficulty: "medium" } })).json();
   assert.equal(c.ok, true);
   assert.equal(c.rounds, 3);
-  assert.equal(c.scene.objects.length, 10);
+  assert.equal(c.scene.objects.length, 14);
 });
 
 test("answer failures return only a coarse reason", async () => {

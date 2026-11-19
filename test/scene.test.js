@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateScene, PRESETS, positionAt, R, W, H } from "../src/scene.js";
+import { generateScene, PRESETS, positionAt, objectPosition, R, W, H } from "../src/scene.js";
 
 test("same seed gives identical scene, different seed differs", () => {
   const a = generateScene("seed-1", PRESETS.high);
@@ -29,4 +29,24 @@ test("objects are static during the highlight phase", () => {
   const sc = generateScene("static", PRESETS.high);
   const o = sc.objects[0];
   assert.deepEqual(positionAt(o, -500), positionAt(o, 0));
+});
+
+test("every preset generates for many seeds, and balls are apart at start AND at the frozen end", () => {
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    for (let s = 0; s < 300; s++) {
+      const sc = generateScene(`${name}-${s}`, preset);
+      assert.equal(sc.objects.length, preset.objects);
+      for (const t of [0, sc.highlightMs + sc.shuffleMs]) {
+        const pts = sc.objects.map((o) => objectPosition(sc, o, t));
+        for (let i = 0; i < pts.length; i++)
+          for (let j = i + 1; j < pts.length; j++) assert.ok(Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) >= 2 * R + 10 - 0.01, `${name}-${s} too close at t=${t}`);
+      }
+    }
+  }
+});
+
+test("balls stay frozen after the shuffle phase", () => {
+  const sc = generateScene("freeze", PRESETS.high);
+  const end = sc.highlightMs + sc.shuffleMs;
+  assert.deepEqual(objectPosition(sc, sc.objects[3], end), objectPosition(sc, sc.objects[3], end + 9000));
 });

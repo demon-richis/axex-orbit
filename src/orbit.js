@@ -6,7 +6,7 @@ import { sign, verify, randomId, deriveSeed } from "./token.js";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const PASS_TTL_MS = 2 * 60 * 1000;
-const HIT_SLACK = 10; // px of tolerance around object radius (latency / touch)
+const HIT_SLACK = 8; // px of tolerance around the ball radius (finger size); balls are frozen so no latency slack is needed
 const SNOWFLAKE = /^\d{15,25}$/;
 
 export function createOrbit({ signingKey, store, now = Date.now, presets = PRESETS, minBehavior = 0.5 }) {
