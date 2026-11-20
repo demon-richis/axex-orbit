@@ -25,8 +25,8 @@ const theme = resolveTheme();
 try { document.documentElement.setAttribute("data-theme", theme); } catch { /* ignore */ }
 const dark = theme === "dark";
 const PAL = dark
-  ? { a: "#8eaaff", b: "#3c63e6", ghost: "rgba(110,140,255,.2)", ring: "rgba(255,255,255,.07)", shadow: "rgba(0,0,0,.4)", ok: "#30d158", bad: "#ff453a" }
-  : { a: "#7fa0ff", b: "#2f5be0", ghost: "rgba(47,91,224,.14)", ring: "rgba(154,163,178,.25)", shadow: "rgba(0,0,0,.12)", ok: "#1e9e5a", bad: "#d93025" };
+  ? { a: "#8eaaff", b: "#3c63e6", ghost: "rgba(110,140,255,.2)", grid: "rgba(174,190,255,.07)", spark: "rgba(195,208,255,.56)", orbit: "rgba(142,170,255,.24)", signal: "#71e1ff", ring: "rgba(255,255,255,.07)", shadow: "rgba(0,0,0,.4)", ok: "#30d158", bad: "#ff453a" }
+  : { a: "#7fa0ff", b: "#2f5be0", ghost: "rgba(47,91,224,.14)", grid: "rgba(83,107,161,.1)", spark: "rgba(74,104,171,.46)", orbit: "rgba(49,94,251,.2)", signal: "#008fa8", ring: "rgba(154,163,178,.25)", shadow: "rgba(0,0,0,.12)", ok: "#1e9e5a", bad: "#d93025" };
 const AMBER = "#f59e0b";
 
 const $ = (id) => document.getElementById(id);
@@ -164,9 +164,52 @@ function pill(text, x, y, bg, fg, scene) {
   ctx.fillText(text, px + w / 2, py + 11.5);
 }
 
+function drawBackdrop(scene, t) {
+  const cx = scene.W / 2, cy = scene.H / 2;
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = PAL.grid;
+  for (let x = 30; x < scene.W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, scene.H); ctx.stroke(); }
+  for (let y = 30; y < scene.H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(scene.W, y); ctx.stroke(); }
+
+  ctx.translate(cx, cy);
+  ctx.rotate((t / 10000) % (Math.PI * 2));
+  ctx.setLineDash([2, 8]);
+  ctx.strokeStyle = PAL.orbit;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(0, 0, 132, 78, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.rotate(Math.PI / 3);
+  ctx.beginPath(); ctx.ellipse(0, 0, 132, 78, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (let i = 0; i < 22; i++) {
+    const x = ((i * 83 + 17) % scene.W) - cx;
+    const y = ((i * 47 + 29) % scene.H) - cy;
+    const pulse = 0.45 + 0.35 * Math.sin(t / 420 + i * 1.7);
+    ctx.globalAlpha = Math.max(0.12, pulse);
+    ctx.fillStyle = PAL.spark;
+    ctx.beginPath();
+    ctx.arc(x, y, i % 5 === 0 ? 1.5 : 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.rotate(-Math.PI / 3 - (t / 10000) % (Math.PI * 2));
+  for (let i = 0; i < 3; i++) {
+    const a = t / (1800 + i * 260) + i * 2.1;
+    const x = Math.cos(a) * (106 + i * 13), y = Math.sin(a) * (58 + i * 9);
+    ctx.fillStyle = i === 1 ? AMBER : PAL.signal;
+    ctx.globalAlpha = 0.72;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3); ctx.lineTo(x + 3, y); ctx.lineTo(x, y + 3); ctx.lineTo(x - 3, y); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // o.reveal = { tapped:[x,y]|null, ok:boolean } draws the verdict markers on the frozen scene.
 function drawScene(scene, t, o = {}) {
   ctx.clearRect(0, 0, scene.W, scene.H);
+  drawBackdrop(scene, t);
   for (const rr of [60, 115]) ring(scene.W / 2, scene.H / 2, rr, PAL.ring, 1);
   const moving = t > scene.highlightMs && t < scene.highlightMs + scene.shuffleMs;
   scene.objects.forEach((ob) => {
