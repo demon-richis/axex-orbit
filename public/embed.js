@@ -1,4 +1,4 @@
-// Axex Orbit embed. Looks like a normal captcha: a 300 x 65 "Verify you are human" box.
+// Axex Orbit embed. Looks like a normal captcha: a compact responsive "Verify you are human" box.
 // Click -> the challenge opens as a centered popup (desktop) or a bottom sheet (phones), then collapses back to the box.
 //
 //   <script src="https://ORBIT_HOST/widget/embed.js"></script>
@@ -24,11 +24,11 @@
   }
 
   function inlineStyle(scheme) {
-    return "width:100%;height:65px;border:0;border-radius:14px;display:block;box-shadow:0 1px 2px rgba(16,24,40,.08);" + scheme;
+    return "width:100%;height:72px;border:0;border-radius:16px;display:block;box-shadow:0 1px 2px rgba(16,24,40,.08);" + scheme;
   }
   function popStyle(scheme) {
     if (window.innerWidth < 520) {
-      return "position:fixed;left:0;bottom:0;width:100vw;height:calc(75vw + 176px + env(safe-area-inset-bottom,0px));max-height:94vh;border:0;border-radius:20px 20px 0 0;z-index:2147483001;box-shadow:0 -10px 40px rgba(0,0,0,.35);animation:axo-sheet .32s cubic-bezier(.2,.8,.2,1);" + scheme;
+      return "position:fixed;left:0;bottom:0;width:100vw;height:min(calc(75vw + 190px + env(safe-area-inset-bottom,0px)),94dvh);max-height:94dvh;border:0;border-radius:22px 22px 0 0;z-index:2147483001;box-shadow:0 -10px 40px rgba(0,0,0,.35);animation:axo-sheet .32s cubic-bezier(.2,.8,.2,1);" + scheme;
     }
     return "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;height:464px;max-height:94vh;border:0;border-radius:20px;z-index:2147483001;box-shadow:0 24px 80px rgba(0,0,0,.35);animation:axo-pop .26s cubic-bezier(.2,.8,.2,1);" + scheme;
   }
@@ -40,30 +40,45 @@
     var scheme = theme === "dark" ? "color-scheme:dark;" : theme === "light" ? "color-scheme:light;" : "";
 
     var wrap = document.createElement("div");
-    wrap.style.cssText = "width:300px;max-width:100%;height:65px;position:relative;";
+    wrap.style.cssText = "width:100%;max-width:360px;height:72px;position:relative;";
+    wrap.setAttribute("aria-live", "polite");
     var iframe = document.createElement("iframe");
     iframe.src = base + "/widget/frame#origin=" + encodeURIComponent(location.origin) + "&theme=" + theme;
-    iframe.title = "Axex Orbit verification";
+    iframe.title = "Axex Orbit human verification";
+    iframe.loading = "eager";
     iframe.setAttribute("referrerpolicy", "no-referrer");
     iframe.style.cssText = inlineStyle(scheme);
     var backdrop = null;
     var popped = false;
+    var previousFocus = null;
+    var previousOverflow = "";
 
     function onResize() { if (popped) iframe.style.cssText = popStyle(scheme); }
+    function onKeydown(e) {
+      if (popped && e.key === "Escape") { e.preventDefault(); send({ cmd: "cancel" }); }
+    }
     function setMode(mode) {
       if (mode === "pop") {
+        previousFocus = document.activeElement;
+        previousOverflow = document.body.style.overflow;
         popped = true;
+        document.body.style.overflow = "hidden";
         if (!backdrop) {
           backdrop = document.createElement("div");
-          backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);z-index:2147483000;animation:axo-fade .2s ease;";
+          backdrop.setAttribute("role", "presentation");
+          backdrop.style.cssText = "position:fixed;inset:0;background:rgba(8,15,30,.48);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);z-index:2147483000;animation:axo-fade .2s ease;";
           backdrop.addEventListener("click", function () { send({ cmd: "cancel" }); });
           document.body.appendChild(backdrop);
         }
         iframe.style.cssText = popStyle(scheme);
+        setTimeout(function () { if (popped && iframe.focus) iframe.focus(); }, 0);
       } else {
         popped = false;
         if (backdrop) { backdrop.remove(); backdrop = null; }
+        document.body.style.overflow = previousOverflow;
         iframe.style.cssText = inlineStyle(scheme);
+        if (previousFocus && previousFocus.focus) previousFocus.focus();
+        previousFocus = null;
       }
     }
     function send(msg) {
@@ -93,13 +108,19 @@
     }
     window.addEventListener("message", onMessage);
     window.addEventListener("resize", onResize);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
+    document.addEventListener("keydown", onKeydown);
     wrap.appendChild(iframe);
     el.appendChild(wrap);
     return {
       destroy: function () {
         window.removeEventListener("message", onMessage);
         window.removeEventListener("resize", onResize);
+        if (window.visualViewport) window.visualViewport.removeEventListener("resize", onResize);
+        document.removeEventListener("keydown", onKeydown);
         if (backdrop) backdrop.remove();
+        document.body.style.overflow = previousOverflow;
+        if (previousFocus && previousFocus.focus) previousFocus.focus();
         wrap.remove();
       },
     };

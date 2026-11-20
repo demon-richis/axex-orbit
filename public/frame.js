@@ -41,7 +41,13 @@ function notify(msg) {
 }
 async function api(path, body) {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  return res.json();
+  if (res.ok === false) return null;
+  try {
+    const data = await res.json();
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------- inline widget state ---------------- */
@@ -49,6 +55,8 @@ let verified = false;
 function setInline(state, key) {
   const [a, b] = TEXT[key || state] || ["", ""];
   el.box.setAttribute("data-state", state);
+  el.box.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+  el.box.setAttribute("aria-label", b ? `${a}. ${b}` : a);
   el.label.textContent = a;
   el.sub.textContent = b;
   verified = state === "success";
@@ -57,27 +65,37 @@ function setHeader(tone, small, big) {
   el.pop.setAttribute("data-tone", tone);
   el.instrSmall.textContent = small;
   el.instr.textContent = big;
+  el.pop.setAttribute("aria-label", `${small}. ${big}`);
 }
 function enterPop() {
   setHeader("blue", "One moment", "Loading...");
   el.pop.setAttribute("data-view", "play");
   notify({ event: "mode", mode: "pop" });
-  return sleep(80).then(() => document.body.classList.add("pop")); // let the parent resize the iframe first
+  return sleep(80).then(() => {
+    document.body.classList.add("pop"); // let the parent resize the iframe first
+    el.pop.focus?.();
+  });
 }
 function leavePop() {
   document.body.classList.remove("pop");
   el.pop.setAttribute("data-view", "play");
+  el.box.focus?.();
   notify({ event: "mode", mode: "inline" });
 }
 
 /* ---------------- messages from the embedding page ---------------- */
 let sessionResolver = null;
+let cancelSession = null;
 let cancelRound = null;
 window.addEventListener("message", (e) => {
   if (e.source !== parent || e.origin !== parentOrigin) return;
   const d = e.data;
   if (!d || d.target !== "axex-orbit-frame") return;
-  if (d.cmd === "cancel") { if (cancelRound) cancelRound(); return; }
+  if (d.cmd === "cancel") {
+    if (cancelRound) cancelRound();
+    else if (cancelSession) cancelSession();
+    return;
+  }
   if (!sessionResolver) return;
   if (d.cmd === "session") { sessionResolver(d.session); sessionResolver = null; }
   else if (d.cmd === "session_error") { sessionResolver(null); sessionResolver = null; }
@@ -85,8 +103,20 @@ window.addEventListener("message", (e) => {
 function requestSession() {
   return new Promise((resolve) => {
     sessionResolver = resolve;
+    cancelSession = () => {
+      if (sessionResolver !== resolve) return;
+      sessionResolver = null;
+      cancelSession = null;
+      resolve({ cancelled: true });
+    };
     notify({ event: "request_session" });
-    setTimeout(() => { if (sessionResolver === resolve) { sessionResolver = null; resolve(null); } }, 10000);
+    setTimeout(() => {
+      if (sessionResolver === resolve) {
+        sessionResolver = null;
+        cancelSession = null;
+        resolve(null);
+      }
+    }, 10000);
   });
 }
 
@@ -216,7 +246,11 @@ function runRound(data) {
       fit(scene);
       drawScene(scene, t);
       const phase = t < scene.highlightMs ? 0 : t < answerStart ? 1 : 2;
-      if (phase !== lastPhase) { lastPhase = phase; setHeader("blue", PHASE[phase][0], PHASE[phase][1]); }
+      if (phase !== lastPhase) {
+        lastPhase = phase;
+        setHeader("blue", PHASE[phase][0], PHASE[phase][1]);
+        el.pop.setAttribute("data-phase", String(phase));
+      }
       const frac = phase === 0 ? 1 - t / scene.highlightMs : phase === 1 ? (t - scene.highlightMs) / scene.shuffleMs : 1 - (t - answerStart) / scene.windowMs;
       el.bar.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
       if (t > end) {
@@ -271,6 +305,7 @@ async function start() {
     setInline("loading");
     const session = await requestSession();
     if (!session) { setInline("error"); notify({ event: "error", reason: "session" }); return; }
+    if (session.cancelled) { setInline("fail", "cancelled"); notify({ event: "fail", reason: "cancelled" }); return; }
     let data;
     try { data = await api("/v1/challenge/new", { session }); } catch { data = null; }
     if (!data || !data.ok) { setInline("error"); notify({ event: "error", reason: (data && data.reason) || "network" }); return; }

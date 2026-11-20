@@ -215,6 +215,19 @@ test("widget: if the page cannot provide a session, the box shows an error and t
   } finally { await w.cleanup(); }
 });
 
+test("widget: Escape/backdrop cancellation works while waiting for a session", { skip: !supported && "needs node >= 22.15", timeout: 30000 }, async () => {
+  const w = await setup(31);
+  try {
+    w.els.box.dispatch("click", {});
+    await w.tick();
+    assert.equal(w.els.box._attrs["data-state"], "loading");
+    w.sendToFrame({ cmd: "cancel" });
+    assert.ok(await w.waitFor(() => w.outbox.some((o) => o.msg.event === "fail" && o.msg.reason === "cancelled"), 100));
+    assert.equal(w.els.box._attrs["data-state"], "fail");
+    assert.equal(w.els.sub.textContent, "Click to try again");
+  } finally { await w.cleanup(); }
+});
+
 test("widget: closing the popup (x button or page backdrop) cancels without a pass token", { skip: !supported && "needs node >= 22.15", timeout: 30000 }, async () => {
   const w = await setup(4);
   try {
