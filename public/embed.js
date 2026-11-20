@@ -28,7 +28,7 @@
   }
   function popStyle(scheme) {
     if (window.innerWidth < 520) {
-      return "position:fixed;left:0;bottom:0;width:100vw;height:min(calc(75vw + 190px + env(safe-area-inset-bottom,0px)),94dvh);max-height:94dvh;border:0;border-radius:22px 22px 0 0;z-index:2147483001;box-shadow:0 -10px 40px rgba(0,0,0,.35);animation:axo-sheet .32s cubic-bezier(.2,.8,.2,1);" + scheme;
+      return "position:fixed;left:0;bottom:0;width:100%;height:min(calc(75vw + 190px + env(safe-area-inset-bottom,0px)),94svh);max-height:94svh;overscroll-behavior:contain;border:0;border-radius:22px 22px 0 0;z-index:2147483001;box-shadow:0 -10px 40px rgba(0,0,0,.35);animation:axo-sheet .32s cubic-bezier(.2,.8,.2,1);" + scheme;
     }
     return "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;height:464px;max-height:94vh;border:0;border-radius:20px;z-index:2147483001;box-shadow:0 24px 80px rgba(0,0,0,.35);animation:axo-pop .26s cubic-bezier(.2,.8,.2,1);" + scheme;
   }
