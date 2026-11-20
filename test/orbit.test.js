@@ -63,6 +63,14 @@ test("pass token is single-use and bound to user + guild", async () => {
   assert.equal((await orbit.siteverify({ token: r.passToken, userId: UID, guildId: GID })).reason, "replay");
 });
 
+test("siteverify requires both identity bindings", async () => {
+  const { now, orbit } = setup();
+  const c = await begin(orbit, "medium");
+  const r = await orbit.submitAnswer(solve(now, c));
+  assert.equal(r.done, true);
+  assert.equal((await orbit.siteverify({ token: r.passToken })).reason, "binding_required");
+});
+
 test("session is single-use (one session = one attempt)", async () => {
   const { orbit } = setup();
   const s = await orbit.createSession({ userId: UID, guildId: GID, difficulty: "high" });
@@ -88,6 +96,19 @@ test("wrong click fails and burns the token", async () => {
   assert.equal(r.ok, false);
   assert.equal(r.detail, "miss");
   assert.equal((await orbit.submitAnswer(a)).reason, "replay");
+});
+
+test("oversized pointer telemetry is rejected and burns the challenge token", async () => {
+  const { now, orbit } = setup();
+  const c = await begin(orbit, "medium");
+  const scene = sceneFor(decodePayload(c.token));
+  const t = scene.highlightMs + scene.shuffleMs + 1000;
+  now.advance(t + 100);
+  const [x, y] = targetPosition(scene, t);
+  const answer = { x, y, t, pt: "mouse", trusted: true, path: Array.from({ length: 121 }, (_, i) => [x, y, i]) };
+  const r = await orbit.submitAnswer({ token: c.token, answer });
+  assert.equal(r.detail, "shape");
+  assert.equal((await orbit.submitAnswer({ token: c.token, answer })).reason, "replay");
 });
 
 test("answering before the answer phase is rejected", async () => {

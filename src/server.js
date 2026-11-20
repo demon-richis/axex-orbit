@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,10 @@ function makeLimiter(max, windowMs, now = Date.now) {
   };
 }
 
+function requestFingerprint(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 24);
+}
+
 export async function buildServer(config = loadConfig(), overrides = {}) {
   let store = overrides.store;
   if (!store) {
@@ -46,6 +51,7 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
   const orbit = createOrbit({ signingKey: config.signingKey, store, minBehavior: config.minBehavior, now: overrides.now });
   const app = Fastify({ logger: overrides.logger ?? false, trustProxy: config.trustProxy, bodyLimit: 64 * 1024 });
   const clientLimit = makeLimiter(40, 60_000);
+  const tokenLimit = makeLimiter(8, 60_000);
   const serverLimit = makeLimiter(600, 60_000);
 
   const cache = new Map();
@@ -57,6 +63,10 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
   app.addHook("onSend", async (req, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    reply.header("Cross-Origin-Opener-Policy", "same-origin");
+    reply.header("Cross-Origin-Resource-Policy", "cross-origin");
+    reply.header("X-DNS-Prefetch-Control", "off");
     reply.header("Cache-Control", "no-store");
   });
 
@@ -72,7 +82,7 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
       reply.type(type);
       if (route === "/widget/frame") {
         const ancestors = config.allowedOrigins.length ? config.allowedOrigins.join(" ") : "'none'";
-        reply.header("Content-Security-Policy", `default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; frame-ancestors ${ancestors}`);
+        reply.header("Content-Security-Policy", `default-src 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; frame-ancestors ${ancestors}`);
       }
       return load(file);
     });
@@ -102,6 +112,8 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
 
   app.post("/v1/challenge/answer", async (req, reply) => {
     if (!clientLimit("a:" + req.ip)) return reply.code(429).send({ ok: false, reason: "rate_limited" });
+    const token = req.body && req.body.token;
+    if (!tokenLimit("t:" + requestFingerprint(token || req.ip))) return reply.code(429).send({ ok: false, reason: "rate_limited" });
     const r = await orbit.submitAnswer(req.body || {});
     if (!r.ok) {
       req.log.info({ reason: r.reason, detail: r.detail }, "orbit answer rejected");

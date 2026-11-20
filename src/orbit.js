@@ -27,6 +27,15 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     return { token, round, rounds: preset.rounds, scene: publicScene(scene) };
   }
 
+  function validAnswerShape(answer, scene) {
+    if (!answer || typeof answer !== "object" || Array.isArray(answer)) return false;
+    if (![answer.x, answer.y, answer.t].every((n) => typeof n === "number" && Number.isFinite(n))) return false;
+    if (answer.x < -HIT_SLACK || answer.x > scene.W + HIT_SLACK || answer.y < -HIT_SLACK || answer.y > scene.H + HIT_SLACK) return false;
+    if (answer.path === undefined) return true;
+    if (!Array.isArray(answer.path) || answer.path.length > 120) return false;
+    return answer.path.every((p) => Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number" && Number.isFinite(n)));
+  }
+
   // Called by the portal BACKEND (secret key). Difficulty is fixed here, so the client can't downgrade it.
   async function createSession({ userId, guildId, difficulty }) {
     if (!SNOWFLAKE.test(String(userId)) || !SNOWFLAKE.test(String(guildId))) return fail("bad_binding");
@@ -53,11 +62,9 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     // Consume first: every round token is single-use, a wrong answer can never be retried on the same scene.
     if (!(await store.markUsed("c:" + c.jti, c.exp - c.iat + 60000))) return fail("replay");
 
-    if (!answer || typeof answer !== "object") return fail("failed");
-    const { x, y, t } = answer;
-    if (![x, y, t].every((n) => typeof n === "number" && Number.isFinite(n))) return fail("failed");
-
     const scene = generateScene(deriveSeed(signingKey, c.cid, c.round), presets[c.diff]);
+    if (!validAnswerShape(answer, scene)) return { ...fail("failed"), detail: "shape" };
+    const { x, y, t } = answer;
     const answerStart = scene.highlightMs + scene.shuffleMs;
     if (t < answerStart || t > answerStart + scene.windowMs) return { ...fail("failed"), detail: "timing_window" };
 
@@ -86,8 +93,8 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     const v = verify(token, signingKey, "pass", now());
     if (!v.ok) return { success: false, reason: v.reason };
     const p = v.payload;
-    if (userId !== undefined && String(userId) !== p.uid) return { success: false, reason: "binding_mismatch" };
-    if (guildId !== undefined && String(guildId) !== p.gid) return { success: false, reason: "binding_mismatch" };
+    if (!SNOWFLAKE.test(String(userId)) || !SNOWFLAKE.test(String(guildId))) return { success: false, reason: "binding_required" };
+    if (String(userId) !== p.uid || String(guildId) !== p.gid) return { success: false, reason: "binding_mismatch" };
     if (!(await store.markUsed("p:" + p.jti, PASS_TTL_MS + 60000))) return { success: false, reason: "replay" };
     return { success: true, userId: p.uid, guildId: p.gid, difficulty: p.diff, rounds: p.rounds, behaviorScore: p.bs, challengeId: p.cid, issuedAt: p.iat };
   }

@@ -39,7 +39,11 @@ test("frame is served with a locked-down CSP limited to allowed origins", async 
   assert.equal(r.statusCode, 200);
   assert.match(r.headers["content-security-policy"], /frame-ancestors https:\/\/portal\.example/);
   assert.match(r.headers["content-security-policy"], /script-src 'self'/);
+  assert.match(r.headers["content-security-policy"], /object-src 'none'/);
   assert.equal(r.headers["x-content-type-options"], "nosniff");
+  assert.equal(r.headers["cross-origin-opener-policy"], "same-origin");
+  assert.equal(r.headers["cross-origin-resource-policy"], "cross-origin");
+  assert.match(r.headers["permissions-policy"], /camera=\(\)/);
 });
 
 test("rate limit kicks in for the browser endpoints", async () => {
@@ -47,6 +51,16 @@ test("rate limit kicks in for the browser endpoints", async () => {
   let limited = false;
   for (let i = 0; i < 60; i++) {
     const r = await app.inject({ method: "POST", url: "/v1/challenge/new", payload: { session: "x" } });
+    if (r.statusCode === 429) { limited = true; break; }
+  }
+  assert.ok(limited);
+});
+
+test("repeated attempts with one challenge token hit the token limiter", async () => {
+  const app = await buildServer(config);
+  let limited = false;
+  for (let i = 0; i < 12; i++) {
+    const r = await app.inject({ method: "POST", url: "/v1/challenge/answer", payload: { token: "same-token", answer: {} } });
     if (r.statusCode === 429) { limited = true; break; }
   }
   assert.ok(limited);

@@ -14,8 +14,10 @@ Portal backend --POST /v1/siteverify (secret) { token, userId, guildId }--> { su
 ```
 * One session = one attempt. Attempt counting / cooldowns / lock stay in the portal state machine.
 * Every token (session, round, pass) is HMAC-signed and single-use (replay store: memory, or Postgres via `DATABASE_URL`).
-* The pass token is bound to Discord `userId` + `guildId`. The portal must call `siteverify`; never trust a client-side "passed".
+* The pass token is bound to Discord `userId` + `guildId`. `siteverify` requires both bindings and consumes the pass token exactly once; never trust a client-side "passed".
 * Failures return only a coarse reason (`failed`/`invalid`), details go to server logs.
+* Browser responses include restrictive CSP, frame-ancestor, permissions, referrer, and cross-origin isolation headers. Browser challenge answers are rate-limited by both client IP and token fingerprint.
+* Answer telemetry is bounded and validated before behavior scoring; malformed or oversized telemetry consumes the challenge token rather than creating a retry oracle.
 
 ## Embed (portal page)
 Looks like a normal captcha: a small "Verify you are human" box. Click -> the challenge opens as a centered popup -> collapses back to the box (green "Verified" on success).
