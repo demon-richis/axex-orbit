@@ -52,6 +52,8 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
   const app = Fastify({ logger: overrides.logger ?? false, trustProxy: config.trustProxy, bodyLimit: 64 * 1024 });
   const clientLimit = makeLimiter(40, 60_000);
   const tokenLimit = makeLimiter(8, 60_000);
+  const frameClientLimit = makeLimiter(900, 60_000);
+  const frameLimit = makeLimiter(600, 60_000);
   const serverLimit = makeLimiter(600, 60_000);
 
   const cache = new Map();
@@ -108,6 +110,17 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
     if (!clientLimit("n:" + req.ip)) return reply.code(429).send({ ok: false, reason: "rate_limited" });
     const r = await orbit.startChallenge(req.body || {});
     return reply.code(r.ok ? 200 : 400).send(r);
+  });
+
+  app.post("/v1/challenge/frame", async (req, reply) => {
+    if (!frameClientLimit("f:" + req.ip)) return reply.code(429).send({ ok: false, reason: "rate_limited" });
+    const token = req.body && req.body.token;
+    if (!frameLimit("f:" + requestFingerprint(token || req.ip))) return reply.code(429).send({ ok: false, reason: "rate_limited" });
+    const r = await orbit.renderFrame(req.body || {});
+    if (!r.ok) return reply.code(400).send({ ok: false, reason: "invalid" });
+    reply.type("image/png");
+    reply.header("Content-Length", r.png.length);
+    return r.png;
   });
 
   app.post("/v1/challenge/answer", async (req, reply) => {

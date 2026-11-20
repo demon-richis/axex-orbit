@@ -3,6 +3,7 @@
 import { PRESETS, generateScene, targetPosition } from "./scene.js";
 import { scorePointer } from "./behavior.js";
 import { sign, verify, randomId, deriveSeed } from "./token.js";
+import { renderChallengeFrame } from "./render.js";
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const PASS_TTL_MS = 2 * 60 * 1000;
@@ -14,17 +15,13 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
 
   const fail = (reason) => ({ ok: false, reason });
 
-  function publicScene(scene) {
-    return { ...scene };
-  }
-
   function issueChallenge({ cid, uid, gid, diff, round, bs }) {
     const preset = presets[diff];
     const iat = now();
     const scene = generateScene(deriveSeed(signingKey, cid, round), preset);
     const lifetime = scene.highlightMs + scene.shuffleMs + scene.windowMs + 20000;
     const token = sign({ typ: "chal", jti: randomId(), cid, uid, gid, diff, round, rounds: preset.rounds, bs, iat, exp: iat + lifetime }, signingKey);
-    return { token, round, rounds: preset.rounds, scene: publicScene(scene) };
+    return { token, round, rounds: preset.rounds, timing: { W: scene.W, H: scene.H, highlightMs: scene.highlightMs, shuffleMs: scene.shuffleMs, windowMs: scene.windowMs } };
   }
 
   function validAnswerShape(answer, scene) {
@@ -88,6 +85,16 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     return { ok: true, done: true, passToken: pass };
   }
 
+  async function renderFrame({ token, t, dark = false }) {
+    const v = verify(token, signingKey, "chal", now());
+    if (!v.ok || typeof t !== "number" || !Number.isFinite(t)) return fail("invalid");
+    const c = v.payload;
+    const scene = generateScene(deriveSeed(signingKey, c.cid, c.round), presets[c.diff]);
+    const max = scene.highlightMs + scene.shuffleMs + scene.windowMs;
+    if (t < 0 || t > max + 1000) return fail("invalid");
+    return { ok: true, png: renderChallengeFrame(scene, t, dark === true), width: scene.W, height: scene.H };
+  }
+
   // Called by the portal BACKEND (secret key) before it trusts the result.
   async function siteverify({ token, userId, guildId }) {
     const v = verify(token, signingKey, "pass", now());
@@ -99,5 +106,5 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     return { success: true, userId: p.uid, guildId: p.gid, difficulty: p.diff, rounds: p.rounds, behaviorScore: p.bs, challengeId: p.cid, issuedAt: p.iat };
   }
 
-  return { createSession, startChallenge, submitAnswer, siteverify };
+  return { createSession, startChallenge, submitAnswer, renderFrame, siteverify };
 }

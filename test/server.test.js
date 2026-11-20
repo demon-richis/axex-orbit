@@ -24,7 +24,18 @@ test("widget can start a challenge from a session; client can't pick difficulty"
   const c = (await app.inject({ method: "POST", url: "/v1/challenge/new", payload: { session: s.session, difficulty: "medium" } })).json();
   assert.equal(c.ok, true);
   assert.equal(c.rounds, 3);
-  assert.equal(c.scene.objects.length, 14);
+  assert.deepEqual(c.timing, { W: 360, H: 270, highlightMs: 2000, shuffleMs: 7000, windowMs: 12000 });
+  assert.equal("scene" in c, false);
+});
+
+test("server-rendered challenge frames are PNG pixels, not scene JSON", async () => {
+  const app = await buildServer(config);
+  const s = (await app.inject({ method: "POST", url: "/v1/session", payload: { userId: UID, guildId: GID, difficulty: "medium" }, headers: auth })).json();
+  const c = (await app.inject({ method: "POST", url: "/v1/challenge/new", payload: { session: s.session } })).json();
+  const r = await app.inject({ method: "POST", url: "/v1/challenge/frame", payload: { token: c.token, t: 100, dark: false } });
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.headers["content-type"], "image/png");
+  assert.equal(r.rawPayload.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
 });
 
 test("answer failures return only a coarse reason", async () => {

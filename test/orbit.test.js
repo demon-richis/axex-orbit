@@ -45,12 +45,14 @@ test("full flow: session -> rounds -> pass token -> siteverify", async () => {
   assert.ok(v.behaviorScore >= 0.5);
 });
 
-test("scene sent to the client never contains secrets (no seed, no key)", async () => {
+test("opaque challenge response contains timing only, never scene coordinates or secrets", async () => {
   const { orbit } = setup();
   const c = await begin(orbit);
   const blob = JSON.stringify(c);
   assert.ok(!blob.includes(KEY));
-  assert.ok(!("seed" in c.scene));
+  assert.ok(c.timing && c.timing.W === 360 && c.timing.H === 270);
+  assert.equal("scene" in c, false);
+  assert.equal("objects" in c, false);
 });
 
 test("pass token is single-use and bound to user + guild", async () => {

@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildServer } from "../src/server.js";
 import { loadConfig } from "../src/config.js";
-import { sceneFor, decodePayload, UID, GID } from "./helpers.js";
+import { KEY, sceneFor, decodePayload, UID, GID } from "./helpers.js";
 import { targetPosition } from "../src/scene.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ if (supported) {
 }
 
 const SECRET = "s".repeat(40);
-const config = loadConfig({ ORBIT_SIGNING_KEY: "k".repeat(40), ORBIT_SITE_SECRET: SECRET, ALLOWED_ORIGINS: ORIGIN });
+const config = loadConfig({ ORBIT_SIGNING_KEY: KEY, ORBIT_SITE_SECRET: SECRET, ALLOWED_ORIGINS: ORIGIN });
 
 function ctxProxy() {
   const p = new Proxy(function () {}, { get: () => (..._a) => p, set: () => true, apply: () => p });
@@ -82,6 +82,7 @@ async function setup(runId) {
   const apiLog = [];
   set("fetch", async (p, opts) => {
     const res = await realFetch(origin + p, opts);
+    if (p === "/v1/challenge/frame") return { ok: res.ok, blob: async () => new Blob([await res.arrayBuffer()]) };
     const json = await res.json();
     apiLog.push({ path: p, json });
     return { json: async () => json };
@@ -147,6 +148,7 @@ test("widget: checkbox -> popup -> tap the right ball -> pass token verified by 
     assert.ok(w.outbox.some((o) => o.msg.event === "mode" && o.msg.mode === "pop"));
     const first = w.apiLog.find((a) => a.path === "/v1/challenge/new").json;
     assert.equal(first.rounds, 1);
+    assert.ok(first.timing && !first.scene);
     assert.equal(w.els.rounds.textContent, "Round 1 of 1");
 
     // phase 0 -> remember, then track, then tap
@@ -156,7 +158,7 @@ test("widget: checkbox -> popup -> tap the right ball -> pass token verified by 
     assert.ok(await w.waitFor(() => w.els.instr.textContent === "was glowing"));
     assert.equal(w.els.instrSmall.textContent, "Tap the ball that");
 
-    const scene = first.scene;
+    const scene = sceneFor(decodePayload(first.token));
     const final = targetPosition(scene, scene.highlightMs + scene.shuffleMs);
     await w.tapAt(final);
     assert.ok(await w.waitFor(() => w.els.pop._attrs["data-view"] === "done", 1500, 16), "success panel should show");
@@ -180,7 +182,7 @@ test("widget: tapping the wrong ball fails, shows the failed state, and no pass 
     await w.clickBoxAndGiveSession();
     assert.ok(await w.waitFor(() => w.bodyClasses.has("pop")));
     const first = w.apiLog.find((a) => a.path === "/v1/challenge/new").json;
-    const scene = first.scene;
+    const scene = sceneFor(decodePayload(first.token));
     assert.ok(await w.waitFor(() => w.els.instr.textContent === "was glowing"));
     const wrongObj = scene.objects.findIndex((_, i) => i !== scene.target);
     const wrong = targetPosition({ ...scene, target: wrongObj }, scene.highlightMs + scene.shuffleMs);

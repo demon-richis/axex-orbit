@@ -8,7 +8,8 @@ Stateless Node service (Fastify). Runs anywhere: Docker, Railway, Render, Fly.io
 ## Flow (Turnstile-style)
 ```
 Portal backend --POST /v1/session (secret)--> Orbit          -> { session }   (difficulty is fixed here)
-Browser widget --POST /v1/challenge/new { session }-->        -> round 1 scene
+Browser widget --POST /v1/challenge/new { session }-->        -> round 1 timing + token
+Browser widget --POST /v1/challenge/frame { token, t }----->        <- PNG pixels
 Browser widget --POST /v1/challenge/answer { token, answer }-> next round | passToken | fail
 Portal backend --POST /v1/siteverify (secret) { token, userId, guildId }--> { success, behaviorScore, ... }
 ```
@@ -36,9 +37,9 @@ Looks like a normal captcha: a small "Verify you are human" box. Click -> the ch
 Set `ALLOWED_ORIGINS` to your portal origin, otherwise the iframe is refused (CSP `frame-ancestors`).
 
 ## How the challenge plays
-1. Balls appear, one glows: "Remember this ball".
-2. All balls look the same and move around, crossing each other: "Keep your eyes on it...".
-3. Balls stop: "Which ball was it? Tap it!". Right tap -> next round / verified, wrong tap -> failed (the right one is revealed).
+1. The server renders the balls and sends only PNG pixels; one ball glows: "Remember this ball".
+2. The server continues sending raster frames while all balls move and cross: "Keep your eyes on it...".
+3. Balls stop: "Which ball was it? Tap it!". Right tap -> next round / verified; wrong tap -> failed.
 
 ## Portal backend (Node)
 ```js
@@ -65,20 +66,18 @@ npm run redteam        # attacker simulation (see below)
 ```
 
 ## HONEST threat model (read this)
-`npm run redteam` result on the current MVP (high, 500 attempts each):
+The browser now receives opaque raster frames, not scene JSON or object coordinates. A solver can still use screenshots, computer vision, and temporal tracking, but cannot solve by reading the scene object model or exact target coordinates from the page.
+
+`npm run redteam` result on the core (high, 500 attempts each):
 * blind random click: **0%**
-* script that reads the scene data and teleport-clicks: **0%** (behavior check)
-* script that reads the scene data and clicks along a straight synthetic mouse line: **0%**
-* script that reads the scene data **and** fakes a human-like mouse path: **100%**
+* script that has server-side scene access and teleport-clicks: **0%** (behavior check)
+* script that has server-side scene access and clicks along a straight synthetic mouse line: **0%**
+* script that has server-side scene access **and** fakes a human-like mouse path: **100%**
 
-So the MVP stops lazy bots and vision-free clickers, adds server-side timing/behavior checks, makes every attempt unique and single-use,
-but **a determined attacker who reads the widget's JSON (or runs the widget in a real browser and reads it) can solve it for ~zero marginal cost.**
-The scene must be sent to the browser to be drawn, so it can always be read. Do not claim a "10000x cost" with this version.
+So the pixel-only mode stops scene-inspection and vision-free clickers, adds server-side timing/behavior checks, makes every attempt unique and single-use, and raises determined-solver cost to screenshot understanding plus motion tracking per attempt. It does not defeat a determined computer-vision attacker.
 
-### Phase 2 (what actually multiplies per-solve cost): pixel-only delivery
-Server renders the frames (e.g. skia-canvas, short WebM/WebP sequence with per-challenge noise/distractors) and the browser only shows
-video and sends click coordinates. No coordinates ever reach the client, so a solver needs vision + tracking per attempt.
-Costs: server CPU/bandwidth, latency, accessibility fallback. Also keep: failure = locked attempt in the portal, review queue for edge cases.
+### Pixel-only delivery tradeoffs
+The server renders PNG frames with per-challenge motion, noise, and distractors; the browser only displays pixels and sends click coordinates. No object coordinates reach the client, so a solver needs vision plus tracking per attempt. Costs are server CPU/bandwidth, latency, and a need for an accessibility fallback. Keep Turnstile as a base layer and route repeated failures to portal lock/review flows.
 
 ### Other limits
 * Behavior thresholds are heuristics tested only with a synthetic mouse. **Calibrate on real human traces (mouse + touch) before production**; tune `MIN_BEHAVIOR`.
