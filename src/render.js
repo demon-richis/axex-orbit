@@ -16,7 +16,8 @@ function blend(px, i, color, alpha = color[3] ?? 255) {
 }
 function pixel(px, w, x, y, color, alpha = color[3] ?? 255) {
   x = Math.round(x); y = Math.round(y);
-  if (x < 0 || y < 0 || x >= w) return;
+  const h = px.length / (w * 4);
+  if (x < 0 || y < 0 || x >= w || y >= h) return;
   const i = (y * w + x) * 4;
   blend(px, i, color, alpha);
 }
@@ -35,24 +36,26 @@ function line(px, w, x0, y0, x1, y1, color, alpha = color[3] ?? 255) {
   }
 }
 function circle(px, w, cx, cy, r, color, alpha = color[3] ?? 255) {
-  const min = Math.floor(cx - r), max = Math.ceil(cx + r), rr = r * r;
-  for (let y = min; y <= max; y++) for (let x = min; x <= max; x++) {
+  const minX = Math.floor(cx - r), maxX = Math.ceil(cx + r);
+  const minY = Math.floor(cy - r), maxY = Math.ceil(cy + r), rr = r * r;
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const dx = x - cx, dy = y - cy, d = dx * dx + dy * dy;
     if (d <= rr) {
       const edge = clamp((r * r - d) / Math.max(1, r * r * 0.35), 0, 1);
-      blend(px, (y * w + x) * 4, color, alpha * edge);
+      pixel(px, w, x, y, color, alpha * edge);
     }
   }
 }
 function gradientCircle(px, w, cx, cy, r, a, b, alpha = 255) {
-  const min = Math.floor(cx - r), max = Math.ceil(cx + r), rr = r * r;
-  for (let y = min; y <= max; y++) for (let x = min; x <= max; x++) {
+  const minX = Math.floor(cx - r), maxX = Math.ceil(cx + r);
+  const minY = Math.floor(cy - r), maxY = Math.ceil(cy + r), rr = r * r;
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const dx = x - cx, dy = y - cy, d = dx * dx + dy * dy;
     if (d <= rr) {
       const edge = clamp((r * r - d) / Math.max(1, r * r * 0.25), 0, 1);
       const light = clamp(1 - Math.hypot(dx + r * 0.35, dy + r * 0.4) / (r * 1.5), 0, 1);
       const c = [Math.round(b[0] + (a[0] - b[0]) * light), Math.round(b[1] + (a[1] - b[1]) * light), Math.round(b[2] + (a[2] - b[2]) * light)];
-      blend(px, (y * w + x) * 4, c, alpha * edge);
+      pixel(px, w, x, y, c, alpha * edge);
     }
   }
 }
