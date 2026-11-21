@@ -109,10 +109,7 @@ async function fetchFrame(token, t, timing) {
   const res = await fetch("/v1/challenge/frame", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, t: r1(t), dark: theme === "dark" }) });
   if (res.ok === false) return false;
   if (res.blob && typeof createImageBitmap === "function") {
-    const image = await createImageBitmap(await res.blob());
-    fit(timing);
-    ctx.drawImage(image, 0, 0, timing.W, timing.H);
-    image.close?.();
+    return await createImageBitmap(await res.blob());
   }
   return true;
 }
@@ -124,14 +121,22 @@ function runRound(data) {
     const end = answerStart + timing.windowMs;
     const t0 = performance.now();
     const now = () => performance.now() - t0;
-    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, frameErrors = 0;
+    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, frameErrors = 0;
     const toLogical = (e) => { const r = el.canvas.getBoundingClientRect(); const s = r.width / timing.W; return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; };
     const sample = (e) => {
       const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null;
       for (const ev of list && list.length ? list : [e]) { const [x, y] = toLogical(ev); path.push([r1(x), r1(y), r1(now())]); }
       if (path.length > 200) path = path.slice(-120);
     };
-    const cleanup = () => { done = true; cancelAnimationFrame(raf); document.removeEventListener("pointermove", sample); el.canvas.removeEventListener("pointerdown", onDown); cancelRound = null; };
+    const cleanup = () => {
+      done = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("pointermove", sample);
+      el.canvas.removeEventListener("pointerdown", onDown);
+      latestImage?.close?.();
+      latestImage = null;
+      cancelRound = null;
+    };
     function onDown(e) {
       if (done) return;
       const t = now();
@@ -149,9 +154,19 @@ function runRound(data) {
       const frac = phase === 0 ? 1 - t / timing.highlightMs : phase === 1 ? (t - timing.highlightMs) / timing.shuffleMs : 1 - (t - answerStart) / timing.windowMs;
       el.bar.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
       if (t > end) { cleanup(); resolve({ tapped: null, answer: { x: 0, y: 0, t: r1(end + 1), pt: "mouse", trusted: false, path: [] } }); return; }
-      if (!pending && t - lastPaint >= 80) {
+      if (latestImage) {
+        fit(timing);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(latestImage, 0, 0, timing.W, timing.H);
+      }
+      if (!pending && t - lastPaint >= 60) {
         lastPaint = t;
-        pending = fetchFrame(data.token, t, timing).then((ok) => { if (!ok) frameErrors++; }).catch(() => { frameErrors++; }).finally(() => { pending = null; });
+        pending = fetchFrame(data.token, t, timing).then((image) => {
+          if (image && typeof image === "object") {
+            if (done) image.close?.();
+            else { latestImage?.close?.(); latestImage = image; }
+          } else if (!image) frameErrors++;
+        }).catch(() => { frameErrors++; }).finally(() => { pending = null; });
       }
       if (frameErrors >= 3) { cleanup(); resolve({ network: true }); return; }
       raf = requestAnimationFrame(frame);

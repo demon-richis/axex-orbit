@@ -52,8 +52,8 @@ export async function buildServer(config = loadConfig(), overrides = {}) {
   const app = Fastify({ logger: overrides.logger ?? false, trustProxy: config.trustProxy, bodyLimit: 64 * 1024 });
   const clientLimit = makeLimiter(40, 60_000);
   const tokenLimit = makeLimiter(8, 60_000);
-  const frameClientLimit = makeLimiter(900, 60_000);
-  const frameLimit = makeLimiter(600, 60_000);
+  const frameClientLimit = makeLimiter(1500, 60_000);
+  const frameLimit = makeLimiter(1200, 60_000);
   const serverLimit = makeLimiter(600, 60_000);
 
   const cache = new Map();

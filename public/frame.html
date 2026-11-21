@@ -45,7 +45,8 @@
   #pop { position: relative; height: 100%; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; background: var(--bg); --c: var(--accent); }
   #pop[data-tone="green"] { --c: var(--ok); }
   #pop[data-tone="red"] { --c: var(--bad); }
-  #ph { position: relative; flex: none; background: radial-gradient(circle at 90% -20%, rgba(255,255,255,.3), transparent 46%), linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0)), var(--c); color: #fff; padding: 22px 22px 19px; transition: background-color .25s; }
+  #ph { position: relative; flex: none; isolation: isolate; overflow: hidden; background: radial-gradient(circle at 90% -20%, rgba(255,255,255,.3), transparent 46%), linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0)), var(--c); color: #fff; padding: 22px 22px 19px; transition: background-color .25s; }
+  #ph::after { content: ""; position: absolute; right: -34px; bottom: -52px; z-index: -1; width: 150px; height: 150px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 18px rgba(255,255,255,.04), 0 0 0 36px rgba(255,255,255,.035); pointer-events: none; }
   #instrSmall { font-size: 11px; font-weight: 750; letter-spacing: .09em; line-height: 1.2; min-height: 14px; text-transform: uppercase; opacity: .86; }
   #instr { max-width: 300px; font-size: 29px; font-weight: 750; line-height: 1.08; letter-spacing: -.035em; margin-top: 5px; }
   #close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(255,255,255,.26); background: rgba(255,255,255,.16); color: #fff; font-size: 19px; line-height: 1; cursor: pointer; transition: background .2s, transform .2s; }
@@ -53,8 +54,12 @@
   #close:focus-visible { outline: 3px solid rgba(255,255,255,.8); outline-offset: 2px; }
   #pb { height: 5px; flex: none; background: rgba(0,0,0,.18); }
   #bar { height: 100%; width: 100%; background: #fff; opacity: .92; }
-  #stage { position: relative; flex: none; margin: 16px 16px 12px; aspect-ratio: 4 / 3; border: 1px solid var(--line); border-radius: 16px; background: var(--stage); box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 5px 16px rgba(16,24,40,.07); overflow: hidden; }
-  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  #stage { position: relative; flex: none; margin: 16px 16px 12px; aspect-ratio: 4 / 3; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line)); border-radius: 16px; background: var(--stage); box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 8px 22px rgba(16,24,40,.09); overflow: hidden; }
+  #stage::after { content: ""; position: absolute; inset: 0; border: 1px solid rgba(255,255,255,.35); border-radius: inherit; pointer-events: none; }
+  #stageMeta { position: absolute; top: 10px; right: 10px; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid rgba(49,94,251,.14); border-radius: 999px; background: color-mix(in srgb, var(--bg) 78%, transparent); color: var(--mut); font-size: 9px; font-weight: 800; letter-spacing: .08em; backdrop-filter: blur(8px); pointer-events: none; }
+  #stageMeta i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); animation: live 1.5s ease-in-out infinite; }
+  @keyframes live { 50% { opacity: .45; transform: scale(.82); } }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; image-rendering: auto; }
   #vf { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30,158,90,.1); }
   #vf svg { width: 96px; height: 96px; animation: pop .45s ease; }
   #pop[data-view="done"] #vf { display: flex; }
@@ -93,6 +98,7 @@
     <div id="ph"><div id="instrSmall" aria-live="polite"></div><div id="instr" aria-live="polite"></div><button id="close" type="button" aria-label="Cancel verification">&times;</button></div>
     <div id="pb"><div id="bar"></div></div>
     <div id="stage">
+      <div id="stageMeta" aria-hidden="true"><i></i><span>LIVE TRACKING</span></div>
       <canvas id="c"></canvas>
       <div id="vf"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#1e9e5a"/><path d="M6.5 12.5l3.7 3.7 7.3-8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     </div>
