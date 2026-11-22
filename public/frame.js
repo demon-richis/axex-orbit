@@ -102,16 +102,35 @@ function fit(timing) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(1, Math.round(r.width * dpr));
   const h = Math.max(1, Math.round(r.height * dpr));
-  if (el.canvas.width !== w || el.canvas.height !== h) { el.canvas.width = w; el.canvas.height = h; }
+  const resized = el.canvas.width !== w || el.canvas.height !== h;
+  if (resized) { el.canvas.width = w; el.canvas.height = h; }
   ctx.setTransform(w / timing.W, 0, 0, h / timing.H, 0, 0);
+  return resized;
 }
-async function fetchFrame(token, t, timing) {
-  const res = await fetch("/v1/challenge/frame", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, t: r1(t), dark: theme === "dark" }) });
-  if (res.ok === false) return false;
-  if (res.blob && typeof createImageBitmap === "function") {
-    return await createImageBitmap(await res.blob());
+async function fetchFrame(token, t) {
+  const res = await fetch("/v1/challenge/frame", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, t: r1(t), dark: theme === "dark" }),
+  });
+  if (!res.ok || !res.headers.get("content-type")?.startsWith("image/png")) return false;
+  const contentLength = Number(res.headers.get("content-length") || 0);
+  if (contentLength > 1_000_000) return false;
+  const blob = await res.blob();
+  if (!blob.size || blob.size > 1_000_000) return false;
+  if (typeof createImageBitmap === "function") return await createImageBitmap(blob);
+  if (typeof Image !== "function" || !URL.createObjectURL) return false;
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ image, close: () => {} });
+      image.onerror = () => reject(new Error("frame_decode_failed"));
+      image.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
   }
-  return true;
 }
 
 function runRound(data) {
@@ -121,7 +140,7 @@ function runRound(data) {
     const end = answerStart + timing.windowMs;
     const t0 = performance.now();
     const now = () => performance.now() - t0;
-    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, frameErrors = 0;
+    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, paintedImage = null, frameErrors = 0;
     const toLogical = (e) => { const r = el.canvas.getBoundingClientRect(); const s = r.width / timing.W; return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; };
     const sample = (e) => {
       const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null;
@@ -155,13 +174,16 @@ function runRound(data) {
       el.bar.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
       if (t > end) { cleanup(); resolve({ tapped: null, answer: { x: 0, y: 0, t: r1(end + 1), pt: "mouse", trusted: false, path: [] } }); return; }
       if (latestImage) {
-        fit(timing);
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(latestImage, 0, 0, timing.W, timing.H);
+        const resized = fit(timing);
+        if (resized || latestImage !== paintedImage) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(latestImage.image || latestImage, 0, 0, timing.W, timing.H);
+          paintedImage = latestImage;
+        }
       }
       if (!pending && t - lastPaint >= 60) {
         lastPaint = t;
-        pending = fetchFrame(data.token, t, timing).then((image) => {
+        pending = fetchFrame(data.token, t).then((image) => {
           if (image && typeof image === "object") {
             if (done) image.close?.();
             else { latestImage?.close?.(); latestImage = image; }
@@ -222,6 +244,15 @@ el.box.addEventListener("click", start);
 el.box.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { if (e.preventDefault) e.preventDefault(); start(); } });
 el.close.addEventListener("click", () => { if (cancelRound) cancelRound(); });
 el.help.addEventListener("click", () => notify({ event: "help" }));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && cancelRound) cancelRound(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && cancelRound) { cancelRound(); return; }
+  if (e.key !== "Tab" || !document.body.classList.contains("pop")) return;
+  const first = el.close, last = el.help;
+  if (e.shiftKey && (document.activeElement === first || document.activeElement === el.pop)) {
+    e.preventDefault(); last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault(); first.focus();
+  }
+});
 setInline("idle");
 notify({ event: "ready" });
