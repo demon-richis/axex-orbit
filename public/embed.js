@@ -36,7 +36,7 @@
   function render(el, opts) {
     opts = opts || {};
     injectStyle();
-    var theme = opts.theme === "dark" || opts.theme === "auto" ? opts.theme : "light";
+    var theme = opts.theme === "dark" || opts.theme === "light" ? opts.theme : "auto";
     var scheme = theme === "dark" ? "color-scheme:dark;" : theme === "light" ? "color-scheme:light;" : "";
 
     var wrap = document.createElement("div");
