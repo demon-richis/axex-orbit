@@ -1,87 +1,64 @@
 # Axex Orbit
 
-"Track & Tap" captcha for **high-risk** Discord verification (replaces Turnstile on the High level only).
-The user remembers a highlighted ball, the balls then move and cross each other, and the user taps the remembered one.
+Axex Orbit is a production-oriented, high-risk, pixel-only temporal CAPTCHA service for Discord verification. It is an additional verification layer, not a replacement for Turnstile in unsupported or repeatedly failing cases.
 
-Stateless Node service (Fastify). Runs anywhere: Docker, Railway, Render, Fly.io, VPS.
+> Production risk: application hardening is implemented, but behavior thresholds must be calibrated against real mouse and touch traces and the widget must be manually validated on supported desktop/mobile browsers before broad rollout.
 
-## Flow (Turnstile-style)
-```
-Portal backend --POST /v1/session (secret)--> Orbit          -> { session }   (difficulty is fixed here)
-Browser widget --POST /v1/challenge/new { session }-->        -> round 1 timing + token
-Browser widget --POST /v1/challenge/frame { token, t }----->        <- PNG pixels
-Browser widget --POST /v1/challenge/answer { token, answer }-> next round | passToken | fail
-Portal backend --POST /v1/siteverify (secret) { token, userId, guildId }--> { success, behaviorScore, ... }
-```
-* One session = one attempt. Attempt counting / cooldowns / lock stay in the portal state machine.
-* Every token (session, round, pass) is HMAC-signed and single-use (replay store: memory, or Postgres via `DATABASE_URL`).
-* The pass token is bound to Discord `userId` + `guildId`. `siteverify` requires both bindings and consumes the pass token exactly once; never trust a client-side "passed".
-* Failures return only a coarse reason (`failed`/`invalid`), details go to server logs.
-* Browser responses include restrictive CSP, frame-ancestor, permissions, referrer, and cross-origin isolation headers. Browser challenge answers are rate-limited by both client IP and token fingerprint.
-* Answer telemetry is bounded and validated before behavior scoring; malformed or oversized telemetry consumes the challenge token rather than creating a retry oracle.
+## Architecture
+Portal backend -> authenticated Orbit API -> PostgreSQL replay store -> bounded PNG renderer. The browser receives raster pixels through a constrained iframe; scene coordinates and target identity are never exposed.
 
-## Embed (portal page)
-Looks like a normal captcha: a small "Verify you are human" box. Click -> the challenge opens as a centered popup -> collapses back to the box (green "Verified" on success).
-```html
-<script src="https://ORBIT_HOST/widget/embed.js"></script>
-<div id="captcha"></div>
-<script>
-  AxexOrbit.render(document.getElementById("captcha"), {
-    // called on every click/retry: ask YOUR backend for a fresh session (POST /v1/session, one session = one attempt)
-    getSession: () => fetch("/api/orbit-session").then(r => r.json()).then(j => j.session),
-    onSuccess: (token) => { /* send token to YOUR backend, which calls siteverify */ },
-    onFail: (reason) => {}, onError: (reason) => {}, onHelp: () => { /* route to staff review */ },
-  });
-</script>
-```
-Set `ALLOWED_ORIGINS` to your portal origin, otherwise the iframe is refused (CSP `frame-ancestors`).
+## Security
+- HMAC-SHA-256 with cryptographically random secrets.
+- Versioned signing keys with up to three previous keys for rotation.
+- Constant-time comparisons.
+- PostgreSQL replay protection for multi-instance production.
+- Bounded memory replay storage for development/test only.
+- Strict production configuration; no secret fallbacks.
+- Fastify request schemas and a 32 KiB body limit.
+- Generic client-facing failures; detailed reasons stay server-side.
+- CSP frame-ancestors, restrictive security headers and no wildcard CORS.
+- Bounded per-IP/per-token rate-limit state.
+- PNG response limits, request timeouts and graceful shutdown.
+- Privacy-safe request IDs with auth/cookie redaction.
 
-## How the challenge plays
-1. The server renders the balls and sends only PNG pixels; one ball glows: "Remember this ball".
-2. The server continues sending raster frames while all balls move and cross: "Keep your eyes on it...".
-3. Balls stop: "Which ball was it? Tap it!". Right tap -> next round / verified; wrong tap -> failed.
+## Accessibility
+The visual puzzle remains a pointer-based security control. The widget provides keyboard-focusable controls, visible focus, reduced-motion and high-contrast preferences, touch-sized controls, orientation support, and a Need help action. The help action must connect to the portal's accessible verification or staff-review flow; it is not a security bypass.
 
-## Portal backend (Node)
-```js
-import { OrbitClient } from "axex-orbit/sdk/index.js";
-const orbit = new OrbitClient({ baseUrl: process.env.ORBIT_URL, secret: process.env.ORBIT_SITE_SECRET });
-const { session } = await orbit.createSession({ userId, guildId, difficulty: "high" });
-// ... later
-const r = await orbit.siteverify({ token, userId, guildId }); // r.success === true
-```
-Any other language: plain HTTP with `Authorization: Bearer <ORBIT_SITE_SECRET>`.
+## Privacy and retention
+Orbit stores only replay identifiers and expiry in persistent storage. It does not intentionally persist browser fingerprints, raw mouse paths, IP addresses or challenge images. Logs contain request IDs and coarse rejection reasons, with authorization/cookies redacted. Expired replay rows are periodically removed.
 
-## Difficulty presets (`src/scene.js`)
-| level | rounds | balls | speed |
-|---|---|---|---|
-| medium | 1 | 8 | 0.8 |
-| high | 2 | 12 | 1.0 |
-| extreme | 3 | 14 | 1.15 |
+## Operations
+- /health/live: process liveness.
+- /health/ready: replay-store readiness; returns 503 when PostgreSQL is unavailable.
+- /health: compatibility endpoint.
+- Optional authenticated /metrics: bounded challenge counters and p50/p95/p99 latency samples.
+On PostgreSQL failure, do not silently fall back to memory in production. Restore connectivity, verify readiness, then resume traffic.
 
-## Run
-```
-cp .env.example .env   # fill secrets
-npm ci && npm test && npm start
-npm run redteam        # attacker simulation (see below)
-```
+## API compatibility
+Existing /v1/session, /v1/challenge/new, /v1/challenge/frame, /v1/challenge/answer, and /v1/siteverify paths remain unchanged. The server-side Node SDK remains compatible while rejecting unsafe base URLs and weak secrets.
 
-## HONEST threat model (read this)
-The browser now receives opaque raster frames, not scene JSON or object coordinates. A solver can still use screenshots, computer vision, and temporal tracking, but cannot solve by reading the scene object model or exact target coordinates from the page.
+## Deployment
+Production requires PostgreSQL over TLS, exact HTTPS ALLOWED_ORIGINS, an HTTPS ORBIT_PUBLIC_URL, unique secrets, and a trusted reverse proxy if TRUST_PROXY=1.
+Docker runs as the non-root node user. Recommended runtime restrictions are read-only filesystem, dropped capabilities and no-new-privileges.
 
-`npm run redteam` result on the core (high, 500 attempts each):
-* blind random click: **0%**
-* script that has server-side scene access and teleport-clicks: **0%** (behavior check)
-* script that has server-side scene access and clicks along a straight synthetic mouse line: **0%**
-* script that has server-side scene access **and** fakes a human-like mouse path: **100%**
+## Threat model
+Orbit raises automation cost by withholding scene semantics and requiring temporal visual tracking. It does not claim to defeat determined computer-vision solvers. Keep Turnstile in front of Orbit for unsupported/repeatedly failing cases.
 
-So the pixel-only mode stops scene-inspection and vision-free clickers, adds server-side timing/behavior checks, makes every attempt unique and single-use, and raises determined-solver cost to screenshot understanding plus motion tracking per attempt. It does not defeat a determined computer-vision attacker.
+## Testing
+npm ci
+npm run check
+npm run testSecurity
+npm run testA11y
+npm run redteam
+npm run audit
+docker build -t axex-orbit:test .
 
-### Pixel-only delivery tradeoffs
-The server renders PNG frames with per-challenge motion, noise, and distractors; the browser only displays pixels and sends click coordinates. No object coordinates reach the client, so a solver needs vision plus tracking per attempt. Costs are server CPU/bandwidth, latency, and a need for an accessibility fallback. Keep Turnstile as a base layer and route repeated failures to portal lock/review flows.
-
-### Other limits
-* Behavior thresholds are heuristics tested only with a synthetic mouse. **Calibrate on real human traces (mouse + touch) before production**; tune `MIN_BEHAVIOR`.
-* The widget logic is tested end to end with a fake DOM (checkbox -> popup -> rounds -> verdict -> siteverify), but it was never opened in a real browser in the build sandbox. Check the look and touch behavior manually on desktop + phone.
-* `PgStore` (Postgres replay store) is untested in the build sandbox. Use the memory store on a single instance until you have run it against Neon.
-* Keep Turnstile as a base layer in front of Orbit for headless-browser signals.
-* Accessibility: the "Need help?" button emits `onHelp` so the portal can route the user to staff review.
+## Release checklist
+- Calibrate behavior thresholds on real mouse and touch traces.
+- Configure PostgreSQL/TLS and verify readiness.
+- Configure exact HTTPS origins.
+- Generate unique secrets.
+- Run all test/security checks and container startup checks.
+- Validate desktop/mobile browser behavior.
+- Keep Turnstile fallback enabled.
+- Publish immutable versioned artifacts.
