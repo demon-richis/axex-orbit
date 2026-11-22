@@ -10,17 +10,22 @@ const PASS_TTL_MS = 2 * 60 * 1000;
 const HIT_SLACK = 8; // px of tolerance around the ball radius (finger size); balls are frozen so no latency slack is needed
 const SNOWFLAKE = /^\d{15,25}$/;
 
-export function createOrbit({ signingKey, store, now = Date.now, presets = PRESETS, minBehavior = 0.5 }) {
+export function createOrbit({ signingKey, signingKeyId = "k1", previousSigningKeys = [], store, now = Date.now, presets = PRESETS, minBehavior = 0.5 }) {
   if (!signingKey || signingKey.length < 32) throw new Error("signingKey must be at least 32 chars");
 
+  const keyring = [{ id: signingKeyId, key: signingKey }, ...previousSigningKeys];
+  if (!keyring.length || new Set(keyring.map((e) => e.id)).size !== keyring.length) throw new Error("invalid signing key ring");
+  const activeKey = keyring[0].key;
+  const issueToken = (payload) => sign({ ...payload, kid: signingKeyId }, activeKey);
+  const keyForId = (id) => keyring.find((e) => e.id === id)?.key || activeKey;
   const fail = (reason) => ({ ok: false, reason });
 
   function issueChallenge({ cid, uid, gid, diff, round, bs }) {
     const preset = presets[diff];
     const iat = now();
-    const scene = generateScene(deriveSeed(signingKey, cid, round), preset);
+    const scene = generateScene(deriveSeed(activeKey, cid, round), preset);
     const lifetime = scene.highlightMs + scene.shuffleMs + scene.windowMs + 20000;
-    const token = sign({ typ: "chal", jti: randomId(), cid, uid, gid, diff, round, rounds: preset.rounds, bs, iat, exp: iat + lifetime }, signingKey);
+    const token = issueToken({ typ: "chal", jti: randomId(), cid, uid, gid, diff, round, rounds: preset.rounds, bs, iat, exp: iat + lifetime }, activeKey);
     return { token, round, rounds: preset.rounds, timing: { W: scene.W, H: scene.H, highlightMs: scene.highlightMs, shuffleMs: scene.shuffleMs, windowMs: scene.windowMs } };
   }
 
@@ -38,13 +43,13 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     if (!SNOWFLAKE.test(String(userId)) || !SNOWFLAKE.test(String(guildId))) return fail("bad_binding");
     if (!presets[difficulty]) return fail("bad_difficulty");
     const iat = now();
-    const session = sign({ typ: "sess", jti: randomId(), uid: String(userId), gid: String(guildId), diff: difficulty, iat, exp: iat + SESSION_TTL_MS }, signingKey);
+    const session = issueToken({ typ: "sess", jti: randomId(), uid: String(userId), gid: String(guildId), diff: difficulty, iat, exp: iat + SESSION_TTL_MS }, activeKey);
     return { ok: true, session, expiresInMs: SESSION_TTL_MS };
   }
 
   // Called by the widget in the browser. One session = one attempt.
   async function startChallenge({ session }) {
-    const v = verify(session, signingKey, "sess", now());
+    const v = verify(session, keyring, "sess", now());
     if (!v.ok) return fail(v.reason);
     const p = v.payload;
     if (!(await store.markUsed("s:" + p.jti, SESSION_TTL_MS))) return fail("replay");
@@ -53,13 +58,13 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
   }
 
   async function submitAnswer({ token, answer }) {
-    const v = verify(token, signingKey, "chal", now());
+    const v = verify(token, keyring, "chal", now());
     if (!v.ok) return fail(v.reason);
     const c = v.payload;
     // Consume first: every round token is single-use, a wrong answer can never be retried on the same scene.
     if (!(await store.markUsed("c:" + c.jti, c.exp - c.iat + 60000))) return fail("replay");
 
-    const scene = generateScene(deriveSeed(signingKey, c.cid, c.round), presets[c.diff]);
+    const scene = generateScene(deriveSeed(keyForId(c.keyId), c.cid, c.round), presets[c.diff]);
     if (!validAnswerShape(answer, scene)) return { ...fail("failed"), detail: "shape" };
     const { x, y, t } = answer;
     const answerStart = scene.highlightMs + scene.shuffleMs;
@@ -81,15 +86,15 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
     }
     const iat = now();
     const avg = bs.reduce((a, n) => a + n, 0) / bs.length;
-    const pass = sign({ typ: "pass", jti: randomId(), cid: c.cid, uid: c.uid, gid: c.gid, diff: c.diff, rounds: c.rounds, bs: Math.round(avg * 100) / 100, iat, exp: iat + PASS_TTL_MS }, signingKey);
+    const pass = issueToken({ typ: "pass", jti: randomId(), cid: c.cid, uid: c.uid, gid: c.gid, diff: c.diff, rounds: c.rounds, bs: Math.round(avg * 100) / 100, iat, exp: iat + PASS_TTL_MS }, activeKey);
     return { ok: true, done: true, passToken: pass };
   }
 
   async function renderFrame({ token, t, dark = false }) {
-    const v = verify(token, signingKey, "chal", now());
+    const v = verify(token, keyring, "chal", now());
     if (!v.ok || typeof t !== "number" || !Number.isFinite(t)) return fail("invalid");
     const c = v.payload;
-    const scene = generateScene(deriveSeed(signingKey, c.cid, c.round), presets[c.diff]);
+    const scene = generateScene(deriveSeed(keyForId(c.keyId), c.cid, c.round), presets[c.diff]);
     const max = scene.highlightMs + scene.shuffleMs + scene.windowMs;
     if (t < 0 || t > max + 1000) return fail("invalid");
     return { ok: true, png: renderChallengeFrame(scene, t, dark === true), width: scene.W, height: scene.H };
@@ -97,7 +102,7 @@ export function createOrbit({ signingKey, store, now = Date.now, presets = PRESE
 
   // Called by the portal BACKEND (secret key) before it trusts the result.
   async function siteverify({ token, userId, guildId }) {
-    const v = verify(token, signingKey, "pass", now());
+    const v = verify(token, keyring, "pass", now());
     if (!v.ok) return { success: false, reason: v.reason };
     const p = v.payload;
     if (!SNOWFLAKE.test(String(userId)) || !SNOWFLAKE.test(String(guildId))) return { success: false, reason: "binding_required" };
