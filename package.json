@@ -10,10 +10,16 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
-    "redteam": "node tools/redteam.js"
+    "redteam": "node tools/redteam.js",
+    "lint": "node --check src/*.js sdk/*.js tools/*.js",
+    "check": "npm run lint && npm test",
+    "testSecurity": "node --test test/security.test.js",
+    "testA11y": "node --test test/a11y.test.js",
+    "audit": "npm audit --omit=dev",
+    "load": "node tools/load-smoke.js"
   },
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
+  "private": false,
   "dependencies": {
     "fastify": "^5.12.8",
     "pg": "^8.23.1"
