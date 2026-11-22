@@ -52,4 +52,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t axex-orbit:ci .
-      - run: docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges -e NODE_ENV=production -e ORBIT_SIGNING_KEY=${{ secrets.ORBIT_CI_SIGNING_KEY }} -e ORBIT_SIGNING_KEY_ID=ci -e ORBIT_SITE_SECRET=${{ secrets.ORBIT_CI_SITE_SECRET }} -e ORBIT_PUBLIC_URL=https://orbit.example -e ALLOWED_ORIGINS=https://portal.example -e DATABASE_URL=postgresql://postgres:orbit-ci@host.docker.internal:5432/orbit -p 18787:8787 axex-orbit:ci
+      - run: docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges -e NODE_ENV=test -e ORBIT_SIGNING_KEY=ci-test-signing-key-0123456789-abcdefghijklmnopqrstuvwxyz -e ORBIT_SIGNING_KEY_ID=ci -e ORBIT_SITE_SECRET=ci-test-site-secret-0123456789-abcdefghijklmnopqrstuvwxyz -e ALLOWED_ORIGINS=http://localhost:8787 axex-orbit:ci
