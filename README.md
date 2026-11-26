@@ -62,3 +62,6 @@ docker build -t axex-orbit:test .
 - Validate desktop/mobile browser behavior.
 - Keep Turnstile fallback enabled.
 - Publish immutable versioned artifacts.
+## License
+
+AxexOrbit is released under the MIT License. See [LICENSE](LICENSE). The Axex Terms and Privacy Policy are published at [PORTAL URL]/terms and [PORTAL URL]/privacy.
