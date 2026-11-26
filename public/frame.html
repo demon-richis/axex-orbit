@@ -53,13 +53,15 @@
   #close:hover { background: rgba(255,255,255,.3); transform: scale(1.04); }
   #close:focus-visible { outline: 3px solid rgba(255,255,255,.8); outline-offset: 2px; }
   #pb { height: 5px; flex: none; background: rgba(0,0,0,.18); }
-  #bar { height: 100%; width: 100%; background: #fff; opacity: .92; }
-  #stage { position: relative; flex: none; margin: 16px 16px 12px; aspect-ratio: 4 / 3; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line)); border-radius: 16px; background: var(--stage); box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 8px 22px rgba(16,24,40,.09); overflow: hidden; }
+  #bar { height: 100%; width: 100%; background: #fff; opacity: .92; transition: width .12s linear; will-change: width; }
+  #stage { position: relative; flex: none; margin: 16px 16px 12px; aspect-ratio: 4 / 3; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line)); border-radius: 16px; background: var(--stage); box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 8px 22px rgba(16,24,40,.09); overflow: hidden; contain: paint; }
   #stage::after { content: ""; position: absolute; inset: 0; border: 1px solid rgba(255,255,255,.35); border-radius: inherit; pointer-events: none; }
   #stageMeta { position: absolute; top: 10px; right: 10px; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid rgba(49,94,251,.14); border-radius: 999px; background: color-mix(in srgb, var(--bg) 78%, transparent); color: var(--mut); font-size: 9px; font-weight: 800; letter-spacing: .08em; backdrop-filter: blur(8px); pointer-events: none; }
-  #stageMeta i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); animation: live 1.5s ease-in-out infinite; }
+  #stageMeta i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); animation: live 1.5s ease-in-out infinite; transition: background .25s, box-shadow .25s; }
+  #pop[data-phase="0"] #stageMeta i { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent); }
+  #pop[data-phase="1"] #stageMeta i { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
   @keyframes live { 50% { opacity: .45; transform: scale(.82); } }
-  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; image-rendering: auto; }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; image-rendering: auto; will-change: contents; }
   #vf { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30,158,90,.1); }
   #vf svg { width: 96px; height: 96px; animation: pop .45s ease; }
   #pop[data-view="done"] #vf { display: flex; }

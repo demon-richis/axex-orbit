@@ -25,6 +25,7 @@ try { document.documentElement.setAttribute("data-theme", theme); } catch { /* i
 const $ = (id) => document.getElementById(id);
 const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), canvas: $("c"), instrSmall: $("instrSmall"), instr: $("instr"), rounds: $("rounds"), bar: $("bar"), help: $("help"), close: $("close") };
 const ctx = el.canvas.getContext("2d");
+const FRAME_INTERVAL_MS = 34;
 const r1 = (n) => Math.round(n * 10) / 10;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -177,11 +178,12 @@ function runRound(data) {
         const resized = fit(timing);
         if (resized || latestImage !== paintedImage) {
           ctx.imageSmoothingEnabled = true;
+          if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
           ctx.drawImage(latestImage.image || latestImage, 0, 0, timing.W, timing.H);
           paintedImage = latestImage;
         }
       }
-      if (!pending && t - lastPaint >= 60) {
+      if (!pending && t - lastPaint >= FRAME_INTERVAL_MS) {
         lastPaint = t;
         pending = fetchFrame(data.token, t).then((image) => {
           if (image && typeof image === "object") {
