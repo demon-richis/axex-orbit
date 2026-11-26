@@ -25,7 +25,7 @@ try { document.documentElement.setAttribute("data-theme", theme); } catch { /* i
 const $ = (id) => document.getElementById(id);
 const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), canvas: $("c"), instrSmall: $("instrSmall"), instr: $("instr"), rounds: $("rounds"), bar: $("bar"), help: $("help"), close: $("close") };
 const ctx = el.canvas.getContext("2d");
-const FRAME_INTERVAL_MS = 34;
+const FRAME_INTERVAL_MS = 50;
 const r1 = (n) => Math.round(n * 10) / 10;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
