@@ -68,6 +68,7 @@ async function setup(runId) {
   const g = globalThis;
   const saved = {};
   const set = (k, v) => { saved[k] = Object.getOwnPropertyDescriptor(g, k); Object.defineProperty(g, k, { value: v, configurable: true, writable: true }); };
+  const nativeFetch = g.fetch;
 
   set("window", g);
   set("addEventListener", (t, fn) => (winHandlers[t] ||= []).push(fn));
@@ -78,11 +79,16 @@ async function setup(runId) {
   set("performance", new Proxy(realPerf, { get: (t, k) => (k === "now" ? () => clock.t : typeof t[k] === "function" ? t[k].bind(t) : t[k]) }));
   set("requestAnimationFrame", (fn) => { rafQueue.push(fn); return rafQueue.length; });
   set("cancelAnimationFrame", () => {});
-  const realFetch = saved.fetch?.value || fetch;
+  set("createImageBitmap", async () => ({ close: () => {} }));
   const apiLog = [];
   set("fetch", async (p, opts) => {
-    const res = await realFetch(origin + p, opts);
-    if (p === "/v1/challenge/frame") return { ok: res.ok, blob: async () => new Blob([await res.arrayBuffer()]) };
+    const url = typeof p === "string" && /^https?:\/\//i.test(p) ? p : origin + p;
+    const res = await nativeFetch(url, opts);
+    if (p === "/v1/challenge/frame") return {
+      ok: res.ok,
+      headers: new Headers({ "content-type": "image/png", "content-length": String(Number(res.headers.get("content-length") || 0)) }),
+      blob: async () => new Blob([await res.arrayBuffer()], { type: "image/png" }),
+    };
     const json = await res.json();
     apiLog.push({ path: p, json });
     return { json: async () => json };
@@ -107,7 +113,7 @@ async function setup(runId) {
     for (let i = 0; i < maxSteps; i++) { if (pred()) return true; await step(ms); }
     return false;
   };
-  const sessionFromServer = async () => (await (await realFetch(origin + "/v1/session", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + SECRET }, body: JSON.stringify({ userId: UID, guildId: GID, difficulty: "medium" }) })).json()).session;
+  const sessionFromServer = async () => (await (await nativeFetch(origin + "/v1/session", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + SECRET }, body: JSON.stringify({ userId: UID, guildId: GID, difficulty: "medium" }) })).json()).session;
 
   async function clickBoxAndGiveSession() {
     els.box.dispatch("click", {});

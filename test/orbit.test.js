@@ -150,7 +150,7 @@ test("expired and forged tokens", async () => {
   const c = await begin(orbit, "medium");
   now.advance(10 * 60 * 1000);
   assert.equal((await orbit.submitAnswer({ token: c.token, answer: {} })).reason, "expired");
-  assert.equal((await orbit.submitAnswer({ token: "a.b", answer: {} })).reason, "bad_signature");
+  assert.equal((await orbit.submitAnswer({ token: "a.b", answer: {} })).reason, "malformed");
 });
 
 test("bad session input", async () => {

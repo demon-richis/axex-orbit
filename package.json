@@ -11,7 +11,7 @@
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
     "redteam": "node tools/redteam.js",
-    "lint": "node --check src/*.js sdk/*.js tools/*.js",
+    "lint": "node -e \"const fs=require('fs'),cp=require('child_process'),path=require('path');function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true}))if(e.isDirectory())walk(path.join(d,e.name));else if(e.name.endsWith('.js'))cp.execFileSync(process.execPath,['--check',path.join(d,e.name)],{stdio:'inherit'})} for(const d of ['src','sdk','tools','public'])walk(d)\"",
     "check": "npm run lint && npm test",
     "testSecurity": "node --test test/security.test.js",
     "testA11y": "node --test test/a11y.test.js",
