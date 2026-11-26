@@ -26,6 +26,9 @@ const $ = (id) => document.getElementById(id);
 const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), canvas: $("c"), instrSmall: $("instrSmall"), instr: $("instr"), rounds: $("rounds"), bar: $("bar"), help: $("help"), close: $("close") };
 const ctx = el.canvas.getContext("2d");
 const FRAME_INTERVAL_MS = 50;
+const prefersReducedMotion = (() => {
+  try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true; } catch { return false; }
+})();
 const r1 = (n) => Math.round(n * 10) / 10;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -141,7 +144,7 @@ function runRound(data) {
     const end = answerStart + timing.windowMs;
     const t0 = performance.now();
     const now = () => performance.now() - t0;
-    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, paintedImage = null, frameErrors = 0;
+    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, previousImage = null, imageShownAt = -Infinity, paintedImage = null, frameErrors = 0;
     const toLogical = (e) => { const r = el.canvas.getBoundingClientRect(); const s = r.width / timing.W; return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; };
     const sample = (e) => {
       const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null;
@@ -153,7 +156,9 @@ function runRound(data) {
       cancelAnimationFrame(raf);
       document.removeEventListener("pointermove", sample);
       el.canvas.removeEventListener("pointerdown", onDown);
+      if (previousImage && previousImage !== latestImage) previousImage.close?.();
       latestImage?.close?.();
+      previousImage = null;
       latestImage = null;
       cancelRound = null;
     };
@@ -176,19 +181,36 @@ function runRound(data) {
       if (t > end) { cleanup(); resolve({ tapped: null, answer: { x: 0, y: 0, t: r1(end + 1), pt: "mouse", trusted: false, path: [] } }); return; }
       if (latestImage) {
         const resized = fit(timing);
-        if (resized || latestImage !== paintedImage) {
+        const blending = !prefersReducedMotion && previousImage && performance.now() - imageShownAt < FRAME_INTERVAL_MS;
+        if (resized || latestImage !== paintedImage || blending) {
           ctx.imageSmoothingEnabled = true;
           if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(latestImage.image || latestImage, 0, 0, timing.W, timing.H);
+          if (blending) {
+            const progress = Math.max(0, Math.min(1, (performance.now() - imageShownAt) / FRAME_INTERVAL_MS));
+            ctx.clearRect(0, 0, timing.W, timing.H);
+            ctx.globalAlpha = 1 - progress;
+            ctx.drawImage(previousImage.image || previousImage, 0, 0, timing.W, timing.H);
+            ctx.globalAlpha = progress;
+            ctx.drawImage(latestImage.image || latestImage, 0, 0, timing.W, timing.H);
+            ctx.globalAlpha = 1;
+            if (progress >= 1) { previousImage.close?.(); previousImage = null; }
+          } else {
+            ctx.globalAlpha = 1;
+            ctx.drawImage(latestImage.image || latestImage, 0, 0, timing.W, timing.H);
+          }
           paintedImage = latestImage;
         }
       }
-      if (!pending && t - lastPaint >= FRAME_INTERVAL_MS) {
+      if (!document.hidden && !pending && t - lastPaint >= FRAME_INTERVAL_MS) {
         lastPaint = t;
         pending = fetchFrame(data.token, t).then((image) => {
           if (image && typeof image === "object") {
             if (done) image.close?.();
-            else { latestImage?.close?.(); latestImage = image; }
+            else {
+              if (latestImage && latestImage !== image) { previousImage?.close?.(); previousImage = latestImage; }
+              latestImage = image;
+              imageShownAt = performance.now();
+            }
           } else if (!image) frameErrors++;
         }).catch(() => { frameErrors++; }).finally(() => { pending = null; });
       }
