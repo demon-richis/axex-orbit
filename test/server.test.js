@@ -24,7 +24,7 @@ test("widget can start a challenge from a session; client can't pick difficulty"
   const c = (await app.inject({ method: "POST", url: "/v1/challenge/new", payload: { session: s.session, difficulty: "medium" } })).json();
   assert.equal(c.ok, true);
   assert.equal(c.rounds, 3);
-  assert.deepEqual(c.timing, { W: 360, H: 270, highlightMs: 2000, shuffleMs: 7000, windowMs: 12000 });
+  assert.deepEqual(c.timing, { W: 360, H: 270, highlightMs: 2200, shuffleMs: 7200, windowMs: 12000 });
   assert.equal("scene" in c, false);
 });
 

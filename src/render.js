@@ -119,9 +119,9 @@ export function renderChallengeFrame(scene, t, dark = false) {
   for (const ob of scene.objects) {
     const [x, y] = objectPosition(scene, ob, t);
     ellipse(px, W, x, y + scene.R + 4, scene.R * 0.72, 3.2, pal.shadow, pal.shadow[3]);
-    if (moving) for (let k = 3; k >= 1; k--) {
-      const [tx, ty] = objectPosition(scene, ob, t - k * 40);
-      signalBall(px, W, tx, ty, scene.R * (1 - k * 0.15), pal, 16 + (3 - k) * 5);
+    if (moving) {
+      const [tx, ty] = objectPosition(scene, ob, t - 55);
+      gradientCircle(px, W, tx, ty, scene.R * 0.78, pal.ballA, pal.ballB, 13);
     }
     signalBall(px, W, x, y, scene.R, pal);
   }

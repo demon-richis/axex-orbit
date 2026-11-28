@@ -8,9 +8,9 @@ export const R = 16; // object radius (logical px)
 
 // Difficulty presets. "medium" is mostly for testing; Orbit is meant for HIGH risk.
 export const PRESETS = {
-  medium: { rounds: 1, objects: 8, speed: 0.8, highlightMs: 2200, shuffleMs: 4500, windowMs: 15000 },
-  high: { rounds: 2, objects: 12, speed: 1.0, highlightMs: 2200, shuffleMs: 6000, windowMs: 15000 },
-  extreme: { rounds: 3, objects: 14, speed: 1.15, highlightMs: 2000, shuffleMs: 7000, windowMs: 12000 },
+  medium: { rounds: 1, objects: 7, speed: 0.68, highlightMs: 2400, shuffleMs: 5000, windowMs: 15000 },
+  high: { rounds: 2, objects: 9, speed: 0.82, highlightMs: 2400, shuffleMs: 6500, windowMs: 15000 },
+  extreme: { rounds: 3, objects: 11, speed: 0.96, highlightMs: 2200, shuffleMs: 7200, windowMs: 12000 },
 };
 
 export function positionAt(o, tauMs) {
