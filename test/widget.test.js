@@ -155,25 +155,25 @@ test("widget: checkbox -> popup -> tap the right ball -> pass token verified by 
     const first = w.apiLog.find((a) => a.path === "/v1/challenge/new").json;
     assert.equal(first.rounds, 1);
     assert.ok(first.timing && !first.scene);
-    assert.equal(w.els.rounds.textContent, "Round 1 of 1");
+    assert.equal(w.els.rounds.textContent, "Step 1 of 1");
 
     // phase 0 -> remember, then track, then tap
-    assert.equal(w.els.instrSmall.textContent, "Remember the");
-    assert.equal(w.els.instr.textContent, "glowing ball");
-    assert.ok(await w.waitFor(() => w.els.instr.textContent === "that ball"));
-    assert.ok(await w.waitFor(() => w.els.instr.textContent === "was glowing"));
-    assert.equal(w.els.instrSmall.textContent, "Tap the ball that");
+    assert.equal(w.els.instrSmall.textContent, "First, watch the glow");
+    assert.equal(w.els.instr.textContent, "We'll show you what to follow");
+    assert.ok(await w.waitFor(() => w.els.instr.textContent === "the glowing ball"));
+    assert.ok(await w.waitFor(() => w.els.instr.textContent === "it was glowing"));
+    assert.equal(w.els.instrSmall.textContent, "Now tap where");
 
     const scene = sceneFor(decodePayload(first.token));
     const final = targetPosition(scene, scene.highlightMs + scene.shuffleMs);
     await w.tapAt(final);
     assert.ok(await w.waitFor(() => w.els.pop._attrs["data-view"] === "done", 1500, 16), "success panel should show");
-    assert.equal(w.els.instr.textContent, "You are verified");
+    assert.equal(w.els.instr.textContent, "You're verified");
     assert.equal(w.els.pop._attrs["data-tone"], "green");
     assert.ok(await w.waitFor(() => w.outbox.some((o) => o.msg.event === "success"), 3000, 16), "should report success");
     const success = w.outbox.find((o) => o.msg.event === "success").msg;
     assert.equal(w.els.box._attrs["data-state"], "success");
-    assert.equal(w.els.label.textContent, "Success!");
+    assert.equal(w.els.label.textContent, "You're all set");
     assert.ok(!w.bodyClasses.has("pop"));
     assert.ok(w.outbox.some((o) => o.msg.event === "mode" && o.msg.mode === "inline"));
 
@@ -189,18 +189,18 @@ test("widget: tapping the wrong ball fails, shows the failed state, and no pass 
     assert.ok(await w.waitFor(() => w.bodyClasses.has("pop")));
     const first = w.apiLog.find((a) => a.path === "/v1/challenge/new").json;
     const scene = sceneFor(decodePayload(first.token));
-    assert.ok(await w.waitFor(() => w.els.instr.textContent === "was glowing"));
+    assert.ok(await w.waitFor(() => w.els.instr.textContent === "it was glowing"));
     const wrongObj = scene.objects.findIndex((_, i) => i !== scene.target);
     const wrong = targetPosition({ ...scene, target: wrongObj }, scene.highlightMs + scene.shuffleMs);
     await w.tapAt(wrong);
     assert.ok(await w.waitFor(() => w.els.pop._attrs["data-tone"] === "red", 500, 16), "header should turn red on a wrong tap");
-    assert.equal(w.els.instrSmall.textContent, "Wrong ball.");
-    assert.equal(w.els.instr.textContent, "Verification failed");
+    assert.equal(w.els.instrSmall.textContent, "Almost there");
+    assert.equal(w.els.instr.textContent, "That wasn't the one");
     assert.ok(await w.waitFor(() => w.outbox.some((o) => o.msg.event === "fail"), 3000, 16));
     assert.equal(w.outbox.some((o) => o.msg.event === "success"), false);
     assert.equal(w.els.box._attrs["data-state"], "fail");
-    assert.equal(w.els.label.textContent, "Verification failed");
-    assert.equal(w.els.sub.textContent, "Click to try again");
+    assert.equal(w.els.label.textContent, "That didn't match");
+    assert.equal(w.els.sub.textContent, "Let's try once more");
   } finally { await w.cleanup(); }
 });
 
@@ -232,7 +232,7 @@ test("widget: Escape/backdrop cancellation works while waiting for a session", {
     w.sendToFrame({ cmd: "cancel" });
     assert.ok(await w.waitFor(() => w.outbox.some((o) => o.msg.event === "fail" && o.msg.reason === "cancelled"), 100));
     assert.equal(w.els.box._attrs["data-state"], "fail");
-    assert.equal(w.els.sub.textContent, "Click to try again");
+    assert.equal(w.els.sub.textContent, "You can try again anytime");
   } finally { await w.cleanup(); }
 });
 
@@ -241,11 +241,11 @@ test("widget: closing the popup (x button or page backdrop) cancels without a pa
   try {
     await w.clickBoxAndGiveSession();
     assert.ok(await w.waitFor(() => w.bodyClasses.has("pop")));
-    assert.ok(await w.waitFor(() => w.els.instr.textContent === "glowing ball", 50));
+    assert.ok(await w.waitFor(() => w.els.instr.textContent === "We'll show you what to follow", 50));
     w.els.close.dispatch("click", {});
     assert.ok(await w.waitFor(() => w.outbox.some((o) => o.msg.event === "fail" && o.msg.reason === "cancelled"), 200, 16));
     assert.equal(w.els.box._attrs["data-state"], "fail");
-    assert.equal(w.els.label.textContent, "Verification cancelled");
+    assert.equal(w.els.label.textContent, "Check cancelled");
     assert.ok(!w.bodyClasses.has("pop"));
     assert.equal(w.outbox.some((o) => o.msg.event === "success"), false);
   } finally { await w.cleanup(); }

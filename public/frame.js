@@ -1,13 +1,13 @@
 const TEXT = {
-  idle: ["Verify you are human", ""],
-  loading: ["Verifying...", ""],
-  success: ["Success!", ""],
-  fail: ["Verification failed", "Click to try again"],
-  cancelled: ["Verification cancelled", "Click to try again"],
-  error: ["Could not connect", "Click to retry"],
-  round: (a, b) => `Round ${a} of ${b}`,
+  idle: ["Ready when you are", "A quick visual check"],
+  loading: ["Starting secure check", "This usually takes a few seconds"],
+  success: ["You're all set", "Thanks for confirming"],
+  fail: ["That didn't match", "Let's try once more"],
+  cancelled: ["Check cancelled", "You can try again anytime"],
+  error: ["Having trouble connecting", "Check your connection and try again"],
+  round: (a, b) => `Step ${a} of ${b}`,
 };
-const PHASE = [["Remember the", "glowing ball"], ["Keep your eyes on", "that ball"], ["Tap the ball that", "was glowing"]];
+const PHASE = [["First, watch the glow", "We'll show you what to follow"], ["Keep following", "the glowing ball"], ["Now tap where", "it was glowing"]];
 
 const params = new URLSearchParams(location.hash.slice(1));
 const parentOrigin = params.get("origin") || "";
@@ -59,7 +59,7 @@ function setHeader(tone, small, big) {
   el.pop.setAttribute("aria-label", `${small}. ${big}`);
 }
 function enterPop() {
-  setHeader("blue", "One moment", "Loading...");
+  setHeader("blue", "Getting things ready", "Take a breath...");
   el.pop.setAttribute("data-view", "play");
   notify({ event: "mode", mode: "pop" });
   return sleep(80).then(() => { document.body.classList.add("pop"); el.pop.focus?.(); });
@@ -225,9 +225,9 @@ function runRound(data) {
 
 async function verdict(ok, last) {
   el.bar.style.width = "100%";
-  if (ok && last) { setHeader("green", "All rounds correct", "You are verified"); el.pop.setAttribute("data-view", "done"); await sleep(1000); return; }
-  if (ok) { setHeader("green", "Correct", "Next round"); await sleep(900); }
-  else { setHeader("red", "Wrong ball.", "Verification failed"); await sleep(1700); }
+  if (ok && last) { setHeader("green", "All done", "You're verified"); el.pop.setAttribute("data-view", "done"); await sleep(1000); return; }
+  if (ok) { setHeader("green", "Nice work", "One more quick step"); await sleep(900); }
+  else { setHeader("red", "Almost there", "That wasn't the one"); await sleep(1700); }
 }
 
 let busy = false;
