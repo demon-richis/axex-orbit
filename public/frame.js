@@ -27,6 +27,7 @@ const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), can
 const ctx = el.canvas.getContext("2d");
 const FRAME_INTERVAL_MS = 44;
 const FRAME_BLEND_MS = 88;
+const MAX_IN_FLIGHT_FRAMES = 3;
 const prefersReducedMotion = (() => {
   try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true; } catch { return false; }
 })();
@@ -123,13 +124,13 @@ async function fetchFrame(token, t) {
   if (contentLength > 1_000_000) return false;
   const blob = await res.blob();
   if (!blob.size || blob.size > 1_000_000) return false;
-  if (typeof createImageBitmap === "function") return await createImageBitmap(blob);
+  if (typeof createImageBitmap === "function") return { image: await createImageBitmap(blob), t };
   if (typeof Image !== "function" || !URL.createObjectURL) return false;
   const objectUrl = URL.createObjectURL(blob);
   try {
     return await new Promise((resolve, reject) => {
       const image = new Image();
-      image.onload = () => resolve({ image, close: () => {} });
+      image.onload = () => resolve({ image: { image, close: () => {} }, t });
       image.onerror = () => reject(new Error("frame_decode_failed"));
       image.src = objectUrl;
     });
@@ -145,7 +146,7 @@ function runRound(data) {
     const end = answerStart + timing.windowMs;
     const t0 = performance.now();
     const now = () => performance.now() - t0;
-    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, pending = null, latestImage = null, previousImage = null, imageShownAt = -Infinity, paintedImage = null, frameErrors = 0;
+    let path = [], done = false, raf = 0, lastPhase = -1, lastPaint = -Infinity, lastRequestedT = -Infinity, pendingFrames = new Set(), latestFrameT = -Infinity, latestImage = null, previousImage = null, imageShownAt = -Infinity, paintedImage = null, frameErrors = 0;
     const toLogical = (e) => { const r = el.canvas.getBoundingClientRect(); const s = r.width / timing.W; return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; };
     const sample = (e) => {
       const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null;
@@ -202,18 +203,18 @@ function runRound(data) {
           paintedImage = latestImage;
         }
       }
-      if (!document.hidden && !pending && t - lastPaint >= FRAME_INTERVAL_MS) {
+      if (!document.hidden && pendingFrames.size < MAX_IN_FLIGHT_FRAMES && t - lastPaint >= FRAME_INTERVAL_MS) {
         lastPaint = t;
-        pending = fetchFrame(data.token, t).then((image) => {
-          if (image && typeof image === "object") {
-            if (done) image.close?.();
-            else {
-              if (latestImage && latestImage !== image) { previousImage?.close?.(); previousImage = latestImage; }
-              latestImage = image;
-              imageShownAt = performance.now();
-            }
-          } else if (!image) frameErrors++;
-        }).catch(() => { frameErrors++; }).finally(() => { pending = null; });
+        lastRequestedT = t;
+        const request = fetchFrame(data.token, t).then((frame) => {
+          if (!frame || typeof frame !== "object") { frameErrors++; return; }
+          if (done || frame.t < latestFrameT) { frame.image.close?.(); return; }
+          if (latestImage && latestImage !== frame.image) { previousImage?.close?.(); previousImage = latestImage; }
+          latestFrameT = frame.t;
+          latestImage = frame.image;
+          imageShownAt = performance.now();
+        }).catch(() => { frameErrors++; }).finally(() => { pendingFrames.delete(request); });
+        pendingFrames.add(request);
       }
       if (frameErrors >= 3) { cleanup(); resolve({ network: true }); return; }
       raf = requestAnimationFrame(frame);
