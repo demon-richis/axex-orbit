@@ -67,6 +67,15 @@ function ellipse(px, w, cx, cy, rx, ry, color, alpha = color[3] ?? 255) {
   }
 }
 function ring(px, w, cx, cy, r, color, alpha = color[3] ?? 255) { ellipse(px, w, cx, cy, r, r, color, alpha); }
+function signalBall(px, w, x, y, r, pal, alpha = 255) {
+  // Layered lighting gives the low-resolution PNG a soft, dimensional finish
+  // without exposing any additional scene data to the browser.
+  gradientCircle(px, w, x, y, r, pal.ballA, pal.ballB, alpha);
+  ring(px, w, x, y, r - 0.7, [255, 255, 255], Math.round(alpha * 0.18));
+  circle(px, w, x - r * 0.3, y - r * 0.34, r * 0.42, [255, 255, 255], alpha * 0.13);
+  circle(px, w, x - r * 0.34, y - r * 0.39, r * 0.18, [255, 255, 255], alpha * 0.42);
+  ellipse(px, w, x + r * 0.08, y + r * 0.52, r * 0.53, r * 0.16, [19, 49, 147], alpha * 0.12);
+}
 function crc32(buf) {
   let c = 0xffffffff;
   for (const n of buf) { c ^= n; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); }
@@ -109,15 +118,19 @@ export function renderChallengeFrame(scene, t, dark = false) {
   const moving = t > scene.highlightMs && t < scene.highlightMs + scene.shuffleMs;
   for (const ob of scene.objects) {
     const [x, y] = objectPosition(scene, ob, t);
-    ellipse(px, W, x, y + scene.R + 3, scene.R * 0.7, 3, pal.shadow, pal.shadow[3]);
-    if (moving) for (let k = 2; k >= 1; k--) { const [tx, ty] = objectPosition(scene, ob, t - k * 45); gradientCircle(px, W, tx, ty, scene.R * (1 - k * 0.12), pal.ballA, pal.ballB, 32); }
-    gradientCircle(px, W, x, y, scene.R, pal.ballA, pal.ballB);
+    ellipse(px, W, x, y + scene.R + 4, scene.R * 0.72, 3.2, pal.shadow, pal.shadow[3]);
+    if (moving) for (let k = 3; k >= 1; k--) {
+      const [tx, ty] = objectPosition(scene, ob, t - k * 40);
+      signalBall(px, W, tx, ty, scene.R * (1 - k * 0.15), pal, 16 + (3 - k) * 5);
+    }
+    signalBall(px, W, x, y, scene.R, pal);
   }
   const [tx, ty] = objectPosition(scene, scene.objects[scene.target], t);
   if (t < scene.highlightMs) {
-    circle(px, W, tx, ty, scene.R + 10, AMBER, 55);
-    gradientCircle(px, W, tx, ty, scene.R, [255, 210, 122], AMBER);
-    ring(px, W, tx, ty, scene.R + 7, AMBER, 240);
+    circle(px, W, tx, ty, scene.R + 11, AMBER, 35);
+    ring(px, W, tx, ty, scene.R + 8, [255, 190, 62], 225);
+    ring(px, W, tx, ty, scene.R + 11, [255, 255, 255], 90);
+    signalBall(px, W, tx, ty, scene.R, { ...pal, ballA: [255, 224, 145], ballB: AMBER });
   }
   return png(W, H, px);
 }

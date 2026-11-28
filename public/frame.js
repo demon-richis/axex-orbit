@@ -25,7 +25,8 @@ try { document.documentElement.setAttribute("data-theme", theme); } catch { /* i
 const $ = (id) => document.getElementById(id);
 const el = { box: $("box"), label: $("label"), sub: $("sub"), pop: $("pop"), canvas: $("c"), instrSmall: $("instrSmall"), instr: $("instr"), rounds: $("rounds"), bar: $("bar"), help: $("help"), close: $("close") };
 const ctx = el.canvas.getContext("2d");
-const FRAME_INTERVAL_MS = 50;
+const FRAME_INTERVAL_MS = 44;
+const FRAME_BLEND_MS = 88;
 const prefersReducedMotion = (() => {
   try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true; } catch { return false; }
 })();
@@ -181,12 +182,12 @@ function runRound(data) {
       if (t > end) { cleanup(); resolve({ tapped: null, answer: { x: 0, y: 0, t: r1(end + 1), pt: "mouse", trusted: false, path: [] } }); return; }
       if (latestImage) {
         const resized = fit(timing);
-        const blending = !prefersReducedMotion && previousImage && performance.now() - imageShownAt < FRAME_INTERVAL_MS;
+        const blending = !prefersReducedMotion && previousImage && performance.now() - imageShownAt < FRAME_BLEND_MS;
         if (resized || latestImage !== paintedImage || blending) {
           ctx.imageSmoothingEnabled = true;
           if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
           if (blending) {
-            const progress = Math.max(0, Math.min(1, (performance.now() - imageShownAt) / FRAME_INTERVAL_MS));
+            const progress = Math.max(0, Math.min(1, (performance.now() - imageShownAt) / FRAME_BLEND_MS));
             ctx.clearRect(0, 0, timing.W, timing.H);
             ctx.globalAlpha = 1 - progress;
             ctx.drawImage(previousImage.image || previousImage, 0, 0, timing.W, timing.H);
